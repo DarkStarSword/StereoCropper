@@ -82,13 +82,6 @@ def PrintMaterial(material):
 #   are totally different.
 #*************************************************
 
-_framehelp = u"""\
-F1: toggle help/show options
-F10: toggle fullscreen
-F8: toggle wireframe
-P: pause
-Esc: quit"""
-
 class Frame(object):
     """Basic framework class that handles common tasks
        required from a Direct3D application. Be careful
@@ -117,10 +110,6 @@ class Frame(object):
         self.fullscreenres = (1024, 768)
         self.time = 0.0
         self.elapsedtime = 0.0
-
-        #Help
-        self.help = u"No help"
-        self.showhelp = False
 
         #Private stuff.
         self._hooks = []
@@ -411,17 +400,6 @@ class Frame(object):
 
             self.OnRender()
 
-            #The help string.
-            text = _framehelp
-            if self.showhelp:
-                text = self.help
-
-            textarea = RECT(10, 10, self.presentparams.BackBufferWidth - 10,
-                self.presentparams.BackBufferHeight - 10)
-            self.font.DrawTextW(None, text, -1, textarea,
-                D3DXFONT.LEFT | D3DXFONT.TOP | D3DXFONT.WORDBREAK,
-                0xffffff00)
-
             self.device.EndScene()
             try:
                 self.device.Present(None, None, 0, None)
@@ -699,12 +677,7 @@ def _WndProc(hwnd, msg, wParam, lParam):
         elif msg == 0x0102:
             #WM_CHAR
             char = unichr(wParam)
-            if char == u"p":
-                #XXX - no respect for nesting pauses!
-                assert (self._pauses == 0 or self._pauses == 1)
-                self.Pause(not self._pauses)
-            else:
-                self.OnChar(char)
+            self.OnChar(char)
             return 0
         elif msg in _keyevents:
             #We "steal" some panic keys.
@@ -716,13 +689,6 @@ def _WndProc(hwnd, msg, wParam, lParam):
                     #ctypes seems to respect SystemExit
                     #in callbacks?
                     self.Quit()
-                elif wParam == 0x70: #F1
-                    self.showhelp = not self.showhelp
-                elif wParam == 0x77: #F8
-                    if self._fillmode == D3DFILL.WIREFRAME:
-                        self._fillmode = D3DFILL.SOLID
-                    else:
-                        self._fillmode = D3DFILL.WIREFRAME
                 else:
                     self.OnKey(args)
             else:

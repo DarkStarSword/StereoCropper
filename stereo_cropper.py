@@ -80,11 +80,11 @@ class CropTool(Frame):
         return texture
 
     def load_stereo_mpo(self, filename):
-        image = Image.open(filename)
-        texture_l = self.image_to_texture(image)
-        image.seek(1)
-        texture_r = self.image_to_texture(image)
-        image.close()
+        self.image = Image.open(filename)
+        texture_l = self.image_to_texture(self.image)
+        self.image.seek(1)
+        texture_r = self.image_to_texture(self.image)
+        self.image.close()
         return texture_l, texture_r
 
     def OnCreateDevice(self):
@@ -115,19 +115,39 @@ class CropTool(Frame):
         self.fullscreenres = (1920, 1080)
         self.ToggleFullscreen()
 
+    def calc_rect(self):
+        # FIXME: Resolution / window size
+        res_w = 1920
+        res_h = 1080
+
+        # Preserve aspect:
+        w = res_h * self.image.width / self.image.height
+        if w > res_w:
+            h = res_w * self.image.height / self.image.width
+            w = res_w
+            x = 0
+            y = (res_h - h) / 2
+        else:
+            h = res_h
+            x = (res_w - w) / 2
+            y = 0
+
+        return x, y, w, h
+
     def update_vertex_buffer_eye(self, vbuffer, eye):
         # Update the vertex buffer with the vertex positions and texture
-        # coordiantes that correspond to the current paralax and crop
+        # coordinates that correspond to the current paralax and crop
         ptr = c_void_p()
         vbuffer.Lock(0, 0, byref(ptr), 0)
 
+        x, y, w, h = self.calc_rect()
+
         data = (Vertex * 4)(
-            # FIXME: Resolution / window size
-            #         X     Y  Z  RHW  U  V
-            Vertex(   0,    0, 1, 1.0, 0, 0),
-            Vertex(1920,    0, 1, 1.0, 1, 0),
-            Vertex(   0, 1080, 1, 1.0, 0, 1),
-            Vertex(1920, 1080, 1, 1.0, 1, 1),
+            #        X    Y  Z  RHW  U  V
+            Vertex(  x,   y, 1, 1.0, 0, 0),
+            Vertex(x+w,   y, 1, 1.0, 1, 0),
+            Vertex(  x, y+h, 1, 1.0, 0, 1),
+            Vertex(x+w, y+h, 1, 1.0, 1, 1),
         )
         ctypes.memmove(ptr, data, sizeof(Vertex) * 4)
         vbuffer.Unlock()
@@ -140,13 +160,13 @@ class CropTool(Frame):
         self.device.SetFVF(VERTEXFVF)
 
         NvAPI.Stereo_SetActiveEye(self.stereo_handle, STEREO_ACTIVE_EYE.LEFT)
-        self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff0000ff, 1.0, 0)
+        self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff000000, 1.0, 0)
         self.device.SetStreamSource(0, self.vbuffer_l, 0, sizeof(Vertex))
         self.device.SetTexture(0, self.texture_l)
         self.device.DrawPrimitive(D3DPT.TRIANGLESTRIP, 0, 2)
 
         NvAPI.Stereo_SetActiveEye(self.stereo_handle, STEREO_ACTIVE_EYE.RIGHT)
-        self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff0000ff, 1.0, 0)
+        self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff000000, 1.0, 0)
         self.device.SetStreamSource(0, self.vbuffer_r, 0, sizeof(Vertex))
         self.device.SetTexture(0, self.texture_r)
         self.device.DrawPrimitive(D3DPT.TRIANGLESTRIP, 0, 2)

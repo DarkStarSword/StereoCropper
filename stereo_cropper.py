@@ -113,8 +113,56 @@ class CropTool(Frame):
         # FIXME: Read parallax tag from *second image's* EXIF info - this does
         # not seem to be available in Pillow yet.
 
-        self.image.close()
         return texture_l, texture_r
+
+    def save_adjusted_jps(self):
+        base_filename = os.path.splitext(self.filename)[0] + '-cropped'
+        filename = base_filename + '.jps'
+        i = 0
+        while os.path.exists(filename):
+            i += 1
+            filename = base_filename + '-%d.jps' % i
+
+        parallax_offset = self.parallax / 100.0
+        common_crop = min(self.hcrop[0][0], self.hcrop[1][0]), max(self.hcrop[0][1], self.hcrop[1][1])
+        width = (common_crop[1] - common_crop[0] + parallax_offset) * self.image.width
+        height = (self.vcrop[1] - self.vcrop[0]) * self.image.height
+
+        l_offset = self.hcrop[0][0] - common_crop[0]
+        r_offset = self.hcrop[1][0] - common_crop[0]
+        if parallax_offset > 0:
+            l_offset -= parallax_offset
+            if l_offset < 0:
+                r_offset -= l_offset
+                l_offset = 0
+        else:
+            r_offset += parallax_offset
+            if r_offset < 0:
+                l_offset -= r_offset
+                r_offset = 0
+
+        new_img = Image.new(self.image.mode, (int(width) * 2, int(height)))
+
+        self.image.seek(0)
+        l_img = self.image.crop((
+            self.hcrop[0][0] * self.image.width,
+            self.vcrop   [0] * self.image.height,
+            self.hcrop[0][1] * self.image.width,
+            self.vcrop   [1] * self.image.height))
+        new_img.paste(l_img, (int(width + l_offset * self.image.width), 0))
+        l_img.close()
+
+        self.image.seek(1)
+        r_img = self.image.crop((
+            self.hcrop[1][0] * self.image.width,
+            self.vcrop   [0] * self.image.height,
+            self.hcrop[1][1] * self.image.width,
+            self.vcrop   [1] * self.image.height))
+        new_img.paste(r_img, (int(r_offset * self.image.width), 0))
+        r_img.close()
+
+        new_img.save(filename, format='JPEG')
+        new_img.close()
 
     def OnCreateDevice(self):
         self.stereo_handle = c_void_p()
@@ -167,6 +215,8 @@ class CropTool(Frame):
             elif wParam == ord('F'):
                 self.ToggleFullscreen()
                 self.fit_to_window()
+            elif wParam == ord('S'):
+                self.save_adjusted_jps()
             elif wParam in MODES.hold_keys:
                 self.mode = MODES.hold_keys[wParam]
         elif msg == 0x105 and not lParam & 0x40000000: # WM_SYSKEYDOWN that is not a repeat:

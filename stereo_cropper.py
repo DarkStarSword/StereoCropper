@@ -51,13 +51,18 @@ class Vertex(Structure):
 
 VERTEXFVF = D3DFVF.XYZRHW | D3DFVF.TEX2
 
+class MODES:
+    DEFAULT = 0
+    PARALLAX = 1
+
 # The Frame class from the util module is not an ideal fit for my needs, but it
 # will work and will save time so I'll use it for now.
 class CropTool(Frame):
     def __init__(self, filename, *a, **kw):
         self.filename = filename
         self.scale = 1.0
-        self.panning = None
+        self.mouse_last = None
+        self.mode = MODES.DEFAULT
         self.pan = (0, 0)
         self.parallax = 0.0
         return Frame.__init__(self, *a, **kw)
@@ -134,36 +139,59 @@ class CropTool(Frame):
         self.fit_to_window()
 
     def OnKey(self, (msg, wParam, lParam)):
-        if msg == 0x100: # Normal key
+        if msg == 0x100: # WM_KEYDOWN (Normal key)
             # Borrow some geeqie style key bindings, and some custom ones
             if wParam == ord('Z'):
                 self.scale = 1.0
                 self.pan = (0, 0)
             elif wParam == ord('X'):
                 self.fit_to_window()
+            elif wParam == ord('P'):
+                self.mode = MODES.PARALLAX
             else:
                 print("unhandled normal key: wParam: 0x%x" % wParam)
+        elif msg == 0x101: # WM_KEYUP
+            if wParam == ord('P'):
+                self.mode = MODES.DEFAULT
 
-    def OnMouse(self, (msg, x, y, wheel)):
-        if msg == 0x201: # Left down
-            self.panning = (x, y)
-        elif msg == 0x202: # Left up
-            self.panning = None
-        elif msg == 0x20a: # Mouse wheel
+    def OnMouse(self, (msg, x, y, wheel, modifiers)):
+        if msg == 0x20a: # Mouse wheel
             self.scale = max(self.scale * (1.0 + wheel / 900.0), 0.025)
+            print('scale: %f' % self.scale)
         elif msg == 0x200: # Mouse move
-            if self.panning is not None:
-                self.pan = self.pan[0] + x - self.panning[0], self.pan[1] + y - self.panning[1]
-                self.panning = (x, y)
+            if self.mouse_last is None:
+                dx = 0
+                dy = 0
+            else:
+                dx = x - self.mouse_last[0]
+                dy = y - self.mouse_last[1]
+            self.mouse_last = x, y
+            if self.mode == MODES.DEFAULT:
+                if modifiers & 0x0001: # Left button down - panning
+                    self.pan = self.pan[0] + dx, self.pan[1] + dy
+                    print('pan: %dx%d' % self.pan)
+                if modifiers & 0x0010: # Middle button down - parallax adjustment
+                    self.parallax += dy / self.scale / self.image.height * 100.0
+                    print('parallax: %f' % self.parallax)
+            elif self.mode == MODES.PARALLAX:
+                if modifiers & 0x0001: # Left button down
+                    self.parallax += dx / self.scale / self.image.width * 200.0
+                    print('parallax: %f' % self.parallax)
+                elif modifiers & 0x0002: # Right button down
+                    self.parallax -= dx / self.scale / self.image.width * 200.0
+                    print('parallax: %f' % self.parallax)
         else:
             print("unhandled mouse message: msg: 0x%x, x: %i, y: %i, wheel: %i" % (msg, x, y, wheel))
 
     def calc_rect(self, eye):
 
+        x = eye / 2.0 * self.parallax / 100.0 * self.image.width
+        y = 0
+
         w = self.image.width * self.scale
         h = self.image.height * self.scale
-        x = (self.presentparams.BackBufferWidth - w) / 2
-        y = (self.presentparams.BackBufferHeight - h) / 2
+        x = x * self.scale + (self.presentparams.BackBufferWidth - w) / 2
+        y = y * self.scale + (self.presentparams.BackBufferHeight - h) / 2
 
         x, y = x + self.pan[0], y + self.pan[1]
 

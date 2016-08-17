@@ -667,6 +667,7 @@ def _WndProc(hwnd, msg, wParam, lParam):
             x = lParam & 0xffff
             y = lParam >> 16
             wheel = 0
+            modifiers = wParam & 0xffff
             if msg == 0x0200: #WM_MOUSEMOVE
                 self.device.SetCursorPosition(x, y, 0)
             elif msg == 0x020A: #WM_MOUSEWHEEL
@@ -675,7 +676,7 @@ def _WndProc(hwnd, msg, wParam, lParam):
                 x = point.x
                 y = point.y
                 wheel = struct.unpack('h', struct.pack('H', wParam >> 16))[0]
-            self.OnMouse((msg, x, y, wheel))
+            self.OnMouse((msg, x, y, wheel, modifiers))
             return 0
         elif msg == 0x0102:
             #WM_CHAR

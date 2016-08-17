@@ -326,7 +326,19 @@ def enable_stereo_in_windowed_mode():
     # Question is, how to apply this specifically to this instance of
     # python.exe, but no others? The driver profiles really are a silly design.
 
-    raise NotImplementedError()
+    # A workaround is to start in full screen mode, disable the stereo memo
+    # with Ctrl+Alt+Insert, which since python.exe is not in any predefined
+    # profiles will create a new stereo profile for it, allowing stereo to work
+    # in windowed mode from that point onwards.
+
+    # A second workaround is to use an existing stereo profile with the
+    # settings we need, but this only works if python.exe is not already in a
+    # profile. 3D-Hub Player is a good choice as it is a Stereo Profile without
+    # any other stereo settings that could interfere with us. The biggest
+    # problem with this approach is that the stereo memo is misleading, and it
+    # may stop working if a future driver adds a profile for python.exe without
+    # the StereoProfile setting, but this will do for now:
+    NvAPI.Stereo_SetDefaultProfile('fxdplayer')
 
     # drs_handle = c_void_p()
     # drs_profile = c_void_p()
@@ -347,6 +359,7 @@ def enable_stereo_in_windowed_mode():
 
 def main():
     NvAPI.Initialize()
+    enable_stereo_in_windowed_mode()
     NvAPI.Stereo_SetDriverMode(STEREO_DRIVER_MODE.DIRECT)
 
     try:

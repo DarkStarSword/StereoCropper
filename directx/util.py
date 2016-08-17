@@ -22,6 +22,7 @@ lower-level COM-programming.
 
 import time
 import sys
+import struct
 
 from directx.types import *
 from directx.d3d import IDirect3D9, IDirect3DDevice9, IDirect3DTexture9
@@ -665,6 +666,7 @@ def _WndProc(hwnd, msg, wParam, lParam):
         if IsMouseMessage(msg):
             x = lParam & 0xffff
             y = lParam >> 16
+            wheel = 0
             if msg == 0x0200: #WM_MOUSEMOVE
                 self.device.SetCursorPosition(x, y, 0)
             elif msg == 0x020A: #WM_MOUSEWHEEL
@@ -672,7 +674,8 @@ def _WndProc(hwnd, msg, wParam, lParam):
                 windll.user32.ScreenToClient(hwnd, byref(point));
                 x = point.x
                 y = point.y
-            self.OnMouse((msg, x, y))
+                wheel = struct.unpack('h', struct.pack('H', wParam >> 16))[0]
+            self.OnMouse((msg, x, y, wheel))
             return 0
         elif msg == 0x0102:
             #WM_CHAR

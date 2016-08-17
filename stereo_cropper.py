@@ -92,6 +92,7 @@ class CropTool(Frame):
         self.vcrop = [0.0, 1.0]
         self.hcrop = [[0.0, 1.0], [0.0, 1.0]]
         self.background = backgrounds[0]
+        self.dirty = False
         return Frame.__init__(self, *a, **kw)
 
     def image_to_texture(self, image):
@@ -174,6 +175,7 @@ class CropTool(Frame):
 
         new_img.save(filename, format='JPEG')
         new_img.close()
+        self.dirty = False
 
     def OnCreateDevice(self):
         self.stereo_handle = c_void_p()
@@ -218,6 +220,8 @@ class CropTool(Frame):
         if msg == 0x100 and not lParam & 0x40000000: # WM_KEYDOWN that is not a repeat
             # Borrow some geeqie style key bindings, and some custom ones
             if wParam == 0x1B: # Escape
+                if self.dirty:
+                    self.save_adjusted_jps()
                 self.Quit()
             elif wParam == ord('Z'):
                 self.scale = 1.0
@@ -288,31 +292,40 @@ class CropTool(Frame):
                     self.pan = self.pan[0] + dx, self.pan[1] + dy
                 if modifiers & 0x0010: # Middle button down - parallax adjustment
                     self.parallax += dy / self.scale / self.image.height * 100.0
+                    self.dirty = True
             elif self.mode == MODES.PARALLAX:
                 if modifiers & 0x0001: # Left button down
                     self.parallax += dix * 200.0
+                    self.dirty = True
                 elif modifiers & 0x0002: # Right button down
                     self.parallax -= dix * 200.0
+                    self.dirty = True
             elif self.mode == MODES.CROP_TOP:
                 if modifiers & 0x0013: # Any button down
                     self.vcrop[0] = min(saturate(self.vcrop[0] + diy), self.vcrop[1])
+                    self.dirty = True
             elif self.mode == MODES.CROP_BOTTOM:
                 if modifiers & 0x0013: # Any button down
                     self.vcrop[1] = max(saturate(self.vcrop[1] + diy), self.vcrop[0])
+                    self.dirty = True
             elif self.mode == MODES.CROP_LEFT:
                 if modifiers & 0x0001: # Left button down - crop left/right
                     self.hcrop[1][0] = min(saturate(self.hcrop[1][0] + dix), self.hcrop[1][1])
                     self.hcrop[0][0] = min(saturate(self.hcrop[0][0] + dix), self.hcrop[0][1])
+                    self.dirty = True
                 elif modifiers & 0x0002: # Right buttons down - move up/down to crop back/forward
                     self.hcrop[1][0] = min(saturate(self.hcrop[1][0] - diy / 2.0), self.hcrop[1][1])
                     self.hcrop[0][0] = min(saturate(self.hcrop[0][0] + diy / 2.0), self.hcrop[0][1])
+                    self.dirty = True
             elif self.mode == MODES.CROP_RIGHT:
                 if modifiers & 0x0001: # Left button down - crop left/right
                     self.hcrop[1][1] = max(saturate(self.hcrop[1][1] + dix), self.hcrop[1][0])
                     self.hcrop[0][1] = max(saturate(self.hcrop[0][1] + dix), self.hcrop[0][0])
+                    self.dirty = True
                 elif modifiers & 0x0002: # Right buttons down - move up/down to crop back/forward
                     self.hcrop[1][1] = max(saturate(self.hcrop[1][1] - diy / 2.0), self.hcrop[1][0])
                     self.hcrop[0][1] = max(saturate(self.hcrop[0][1] + diy / 2.0), self.hcrop[0][0])
+                    self.dirty = True
 
     def calc_rect(self, eye):
 

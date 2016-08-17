@@ -162,8 +162,6 @@ class CropTool(Frame):
                 self.fit_to_window()
             elif wParam in MODES.hold_keys:
                 self.mode = MODES.hold_keys[wParam]
-            else:
-                print("unhandled normal key: wParam: 0x%x" % wParam)
         elif msg == 0x101: # WM_KEYUP
             if wParam in MODES.hold_keys:
                 self.mode = MODES.DEFAULT
@@ -177,23 +175,18 @@ class CropTool(Frame):
                 if xp > yp: # Top / Right
                     if xp > 1 - yp:
                         self.mode = MODES.CROP_RIGHT
-                        print('Crop right')
                     else:
                         self.mode = MODES.CROP_TOP
-                        print('Crop top')
                 else: # Bottom / Left
                     if xp > 1 - yp:
                         self.mode = MODES.CROP_BOTTOM
-                        print('Crop bottom')
                     else:
                         self.mode = MODES.CROP_LEFT
-                        print('Crop left')
         elif msg in (0x202, 0x205, 0x208): # Mouse up left/right/middle
             if self.mode in (MODES.CROP_LEFT, MODES.CROP_RIGHT, MODES.CROP_TOP, MODES.CROP_BOTTOM):
                 self.mode = MODES.CROP
         elif msg == 0x20a: # Mouse wheel
             self.scale = max(self.scale * (1.0 + wheel / 900.0), 0.025)
-            print('scale: %f' % self.scale)
         elif msg == 0x200: # Mouse move
             if self.mouse_last is None:
                 dx = dy = dix = diy = 0
@@ -206,25 +199,19 @@ class CropTool(Frame):
             if self.mode == MODES.DEFAULT:
                 if modifiers & 0x0001: # Left button down - panning
                     self.pan = self.pan[0] + dx, self.pan[1] + dy
-                    print('pan: %dx%d' % self.pan)
                 if modifiers & 0x0010: # Middle button down - parallax adjustment
                     self.parallax += dy / self.scale / self.image.height * 100.0
-                    print('parallax: %f' % self.parallax)
             elif self.mode == MODES.PARALLAX:
                 if modifiers & 0x0001: # Left button down
                     self.parallax += dix * 200.0
-                    print('parallax: %f' % self.parallax)
                 elif modifiers & 0x0002: # Right button down
                     self.parallax -= dix * 200.0
-                    print('parallax: %f' % self.parallax)
             elif self.mode == MODES.CROP_TOP:
                 if modifiers & 0x0013: # Any button down
                     self.vcrop[0] = saturate(self.vcrop[0] + diy)
-                    print('crop top: %f' % self.vcrop[0])
             elif self.mode == MODES.CROP_BOTTOM:
                 if modifiers & 0x0013: # Any button down
                     self.vcrop[1] = saturate(self.vcrop[1] + diy)
-                    print('crop bottom: %f' % self.vcrop[1])
             elif self.mode == MODES.CROP_LEFT:
                 if modifiers & 0x0001: # Left button down - crop left/right
                     self.hcrop[1][0] = saturate(self.hcrop[1][0] + dix)
@@ -239,8 +226,6 @@ class CropTool(Frame):
                 elif modifiers & 0x0002: # Right buttons down - move up/down to crop back/forward
                     self.hcrop[1][1] = saturate(self.hcrop[1][1] - diy / 2.0)
                     self.hcrop[0][1] = saturate(self.hcrop[0][1] + diy / 2.0)
-        else:
-            print("unhandled mouse message: msg: 0x%x, x: %i, y: %i, wheel: %i" % (msg, x, y, wheel))
 
     def calc_rect(self, eye):
 

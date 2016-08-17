@@ -402,7 +402,10 @@ def enable_stereo_in_windowed_mode():
     # problem with this approach is that the stereo memo is misleading, and it
     # may stop working if a future driver adds a profile for python.exe without
     # the StereoProfile setting, but this will do for now:
-    NvAPI.Stereo_SetDefaultProfile('fxdplayer')
+    try:
+        NvAPI.Stereo_SetDefaultProfile('fxdplayer')
+    except NvAPI_Exception as e:
+        print('Unable to set default stereo profile: %s' % str(e))
 
     # drs_handle = c_void_p()
     # drs_profile = c_void_p()

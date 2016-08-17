@@ -56,6 +56,10 @@ VERTEXFVF = D3DFVF.XYZRHW | D3DFVF.TEX2
 class CropTool(Frame):
     def __init__(self, filename, *a, **kw):
         self.filename = filename
+        self.scale = 1.0
+        self.panning = None
+        self.pan = (0, 0)
+        self.parallax = 0.0
         return Frame.__init__(self, *a, **kw)
 
     def image_to_texture(self, image):
@@ -84,6 +88,10 @@ class CropTool(Frame):
         texture_l = self.image_to_texture(self.image)
         self.image.seek(1)
         texture_r = self.image_to_texture(self.image)
+
+        # FIXME: Read parallax tag from *second image's* EXIF info - this does
+        # not seem to be available in Pillow yet.
+
         self.image.close()
         return texture_l, texture_r
 
@@ -110,27 +118,54 @@ class CropTool(Frame):
         del self.vbuffer_l
         del self.vbuffer_r
 
+    def fit_to_window(self):
+        res_a = float(self.presentparams.BackBufferWidth) / self.presentparams.BackBufferHeight
+        a = float(self.image.width) / self.image.height
+        if a > res_a:
+            self.scale = float(self.presentparams.BackBufferWidth) / self.image.width
+        else:
+            self.scale = float(self.presentparams.BackBufferHeight) / self.image.height
+        self.pan = (0, 0)
+
     def OnInit(self):
         # FIXME: Enumerate the best resolution:
         self.fullscreenres = (1920, 1080)
         self.ToggleFullscreen()
+        self.fit_to_window()
 
-    def calc_rect(self):
-        # FIXME: Resolution / window size
-        res_w = 1920
-        res_h = 1080
+    def OnKey(self, (msg, wParam, lParam)):
+        if msg == 0x100: # Normal key
+            # Borrow some geeqie style key bindings, and some custom ones
+            if wParam == ord('Z'):
+                self.scale = 1.0
+                self.pan = (0, 0)
+            elif wParam == ord('X'):
+                self.fit_to_window()
+            else:
+                print("unhandled normal key: wParam: 0x%x" % wParam)
 
-        # Preserve aspect:
-        w = res_h * self.image.width / self.image.height
-        if w > res_w:
-            h = res_w * self.image.height / self.image.width
-            w = res_w
-            x = 0
-            y = (res_h - h) / 2
+    def OnMouse(self, (msg, x, y, wheel)):
+        if msg == 0x201: # Left down
+            self.panning = (x, y)
+        elif msg == 0x202: # Left up
+            self.panning = None
+        elif msg == 0x20a: # Mouse wheel
+            self.scale = max(self.scale * (1.0 + wheel / 900.0), 0.025)
+        elif msg == 0x200: # Mouse move
+            if self.panning is not None:
+                self.pan = self.pan[0] + x - self.panning[0], self.pan[1] + y - self.panning[1]
+                self.panning = (x, y)
         else:
-            h = res_h
-            x = (res_w - w) / 2
-            y = 0
+            print("unhandled mouse message: msg: 0x%x, x: %i, y: %i, wheel: %i" % (msg, x, y, wheel))
+
+    def calc_rect(self, eye):
+
+        w = self.image.width * self.scale
+        h = self.image.height * self.scale
+        x = (self.presentparams.BackBufferWidth - w) / 2
+        y = (self.presentparams.BackBufferHeight - h) / 2
+
+        x, y = x + self.pan[0], y + self.pan[1]
 
         return x, y, w, h
 
@@ -140,7 +175,7 @@ class CropTool(Frame):
         ptr = c_void_p()
         vbuffer.Lock(0, 0, byref(ptr), 0)
 
-        x, y, w, h = self.calc_rect()
+        x, y, w, h = self.calc_rect(eye)
 
         data = (Vertex * 4)(
             #        X    Y  Z  RHW  U  V

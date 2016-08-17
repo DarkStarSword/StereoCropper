@@ -208,8 +208,6 @@ class CropTool(Frame):
         self.pan = (0, 0)
 
     def OnInit(self):
-        # FIXME: Enumerate the best resolution:
-        self.fullscreenres = (1920, 1080)
         self.ToggleFullscreen()
         self.fit_to_window()
 

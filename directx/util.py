@@ -294,6 +294,37 @@ class Frame(object):
         self.hwnd = HWND(CreateWindowEx(0, wndclass.lpszClassName, title,
             WINDOWED, 0, 0, 100, 100, 0, 0, wndclass.hInstance, 0))
 
+    def enumerate_best_resolution(self):
+        #"Best" formats first.
+        formats = (D3DFORMAT.A8R8G8B8, D3DFORMAT.X8R8G8B8)
+
+        best = None
+        for format in formats:
+            for i in xrange(self.d3dobject.GetAdapterModeCount(0, format)):
+                mode = D3DDISPLAYMODE()
+                try:
+                    self.d3dobject.EnumAdapterModes(0,
+                        format, i, byref(mode))
+                except:
+                    #No support.
+                    continue
+
+                if best is None:
+                    #First hit
+                    best = mode
+                    continue
+
+                if mode.Width > best.Width or mode.Height > best.Height:
+                    # Better resolution
+                    best = mode
+                    continue
+
+                if mode.RefreshRate > best.RefreshRate:
+                    #Better refreshrate.
+                    best = mode
+
+        return best
+
     def CreateDevice(self):
         """Creates a new device and cleans any old resources if
            they exist. Usually called only once."""
@@ -315,33 +346,10 @@ class Frame(object):
                 raise RuntimeError(
                     "Can't create IDirect3D9. Make sure that you have DirectX 9.0c installed.")
 
-        best = None
-        if self.fullscreen:
-            #"Best" formats first.
-            formats = (D3DFORMAT.A8R8G8B8, D3DFORMAT.X8R8G8B8)
-
-            for format in formats:
-                for i in xrange(self.d3dobject.GetAdapterModeCount(0, format)):
-                    mode = D3DDISPLAYMODE()
-                    try:
-                        self.d3dobject.EnumAdapterModes(0,
-                            format, i, byref(mode))
-                    except:
-                        #No support.
-                        continue
-
-                    if mode.Width != self.fullscreenres[0] or mode.Height != self.fullscreenres[1]:
-                        #Wrong size.
-                        continue
-
-                    if best is None:
-                        #First hit
-                        best = mode
-
-                    if mode.RefreshRate > best.RefreshRate:
-                        #Better refreshrate.
-                        best = mode
-        else:
+        best = self.enumerate_best_resolution()
+        if best is not None:
+            self.fullscreenres = (best.Width, best.Height)
+        if not self.fullscreen:
             #Windowed mode
             best = D3DDISPLAYMODE(0, 0, 0, D3DFORMAT.UNKNOWN)
 

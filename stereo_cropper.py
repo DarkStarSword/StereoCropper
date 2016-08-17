@@ -20,7 +20,7 @@
 from __future__ import print_function
 
 import sys, os
-import ctypes
+import ctypes, struct
 import numpy as np
 from collections import namedtuple
 
@@ -35,6 +35,16 @@ from PIL import Image
 # Ensure this is a recent version of the pillow fork with support for stereo .mpo files
 # Haven't checked which version it was introduced in, don't really care either.
 assert(hasattr(PIL, 'PILLOW_VERSION') and map(int, PIL.PILLOW_VERSION.split('.')) >= [3, 3, 0])
+
+backgrounds = (
+    0x000000,
+    0xffffff,
+    0xc0c0c0,
+    0x808080,
+    0x404040,
+    #0x84807c, # Warm gray
+    #0x7c8084, # Cool gray
+)
 
 # Custom vertex and it's FVF code. This is outdated tech for fixed pipeline, we
 # might change it later.
@@ -81,6 +91,7 @@ class CropTool(Frame):
         self.parallax = 0.0
         self.vcrop = [0, 1]
         self.hcrop = [[0, 1], [0, 1]]
+        self.background = backgrounds[0]
         return Frame.__init__(self, *a, **kw)
 
     def image_to_texture(self, image):
@@ -140,7 +151,8 @@ class CropTool(Frame):
         width = max(self.hcrop[0][1] - self.hcrop[0][0] + l_offset, self.hcrop[1][1] - self.hcrop[1][0] + r_offset) * self.image.width
         height = (self.vcrop[1] - self.vcrop[0]) * self.image.height
 
-        new_img = Image.new(self.image.mode, (int(width) * 2, int(height)))
+        byteswapped_background = struct.unpack('<I', struct.pack('>I', self.background))[0] >> 8
+        new_img = Image.new(self.image.mode, (int(width) * 2, int(height)), byteswapped_background)
 
         self.image.seek(0)
         l_img = self.image.crop((
@@ -201,6 +213,9 @@ class CropTool(Frame):
         self.ToggleFullscreen()
         self.fit_to_window()
 
+    def cycle_background_colours(self):
+        self.background = backgrounds[(backgrounds.index(self.background) + 1) % len(backgrounds)]
+
     def OnKey(self, (msg, wParam, lParam)):
         if msg == 0x100 and not lParam & 0x40000000: # WM_KEYDOWN that is not a repeat
             # Borrow some geeqie style key bindings, and some custom ones
@@ -216,6 +231,8 @@ class CropTool(Frame):
                 self.fit_to_window()
             elif wParam == ord('S'):
                 self.save_adjusted_jps()
+            elif wParam == ord('B'):
+                self.cycle_background_colours()
             elif wParam in MODES.hold_keys:
                 self.mode = MODES.hold_keys[wParam]
         elif msg == 0x105 and not lParam & 0x40000000: # WM_SYSKEYDOWN that is not a repeat:
@@ -354,13 +371,13 @@ class CropTool(Frame):
         self.device.SetFVF(VERTEXFVF)
 
         NvAPI.Stereo_SetActiveEye(self.stereo_handle, STEREO_ACTIVE_EYE.LEFT)
-        self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff000000, 1.0, 0)
+        self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff000000 | self.background, 1.0, 0)
         self.device.SetStreamSource(0, self.vbuffer_l, 0, sizeof(Vertex))
         self.device.SetTexture(0, self.texture_l)
         self.device.DrawPrimitive(D3DPT.TRIANGLESTRIP, 0, 2)
 
         NvAPI.Stereo_SetActiveEye(self.stereo_handle, STEREO_ACTIVE_EYE.RIGHT)
-        self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff000000, 1.0, 0)
+        self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff000000 | self.background, 1.0, 0)
         self.device.SetStreamSource(0, self.vbuffer_r, 0, sizeof(Vertex))
         self.device.SetTexture(0, self.texture_r)
         self.device.DrawPrimitive(D3DPT.TRIANGLESTRIP, 0, 2)

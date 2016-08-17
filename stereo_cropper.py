@@ -20,7 +20,7 @@
 from __future__ import print_function
 
 import sys, os
-import ctypes, struct
+import ctypes, struct, math
 import numpy as np
 from collections import namedtuple
 
@@ -89,8 +89,8 @@ class CropTool(Frame):
         self.mode = MODES.DEFAULT
         self.pan = (0, 0)
         self.parallax = 0.0
-        self.vcrop = [0, 1]
-        self.hcrop = [[0, 1], [0, 1]]
+        self.vcrop = [0.0, 1.0]
+        self.hcrop = [[0.0, 1.0], [0.0, 1.0]]
         self.background = backgrounds[0]
         return Frame.__init__(self, *a, **kw)
 
@@ -140,19 +140,19 @@ class CropTool(Frame):
         # Align one of the two images to the left of the final image:
         if l_offset < r_offset:
             r_offset -= l_offset
-            l_offset = 0
+            l_offset = 0.0
         else:
             l_offset -= r_offset
-            r_offset = 0
+            r_offset = 0.0
 
         # Calculate the width taking cropping and parallax into account. The
         # width will be the maximum required for the two images, but no more -
         # one of the images should be aligned to the right.
-        width = max(self.hcrop[0][1] - self.hcrop[0][0] + l_offset, self.hcrop[1][1] - self.hcrop[1][0] + r_offset) * self.image.width
+        width = int(math.ceil(max(self.hcrop[0][1] - self.hcrop[0][0] + l_offset, self.hcrop[1][1] - self.hcrop[1][0] + r_offset) * self.image.width))
         height = (self.vcrop[1] - self.vcrop[0]) * self.image.height
 
         byteswapped_background = struct.unpack('<I', struct.pack('>I', self.background))[0] >> 8
-        new_img = Image.new(self.image.mode, (int(width) * 2, int(height)), byteswapped_background)
+        new_img = Image.new(self.image.mode, (width * 2, int(round(height))), byteswapped_background)
 
         self.image.seek(0)
         l_img = self.image.crop((
@@ -160,7 +160,7 @@ class CropTool(Frame):
             self.vcrop   [0] * self.image.height,
             self.hcrop[0][1] * self.image.width,
             self.vcrop   [1] * self.image.height))
-        new_img.paste(l_img, (int(width + l_offset * self.image.width), 0))
+        new_img.paste(l_img, (width + int(round(l_offset * self.image.width)), 0))
         l_img.close()
 
         self.image.seek(1)
@@ -169,7 +169,7 @@ class CropTool(Frame):
             self.vcrop   [0] * self.image.height,
             self.hcrop[1][1] * self.image.width,
             self.vcrop   [1] * self.image.height))
-        new_img.paste(r_img, (int(r_offset * self.image.width), 0))
+        new_img.paste(r_img, (int(round(r_offset * self.image.width)), 0))
         r_img.close()
 
         new_img.save(filename, format='JPEG')

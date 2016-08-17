@@ -123,23 +123,22 @@ class CropTool(Frame):
             i += 1
             filename = base_filename + '-%d.jps' % i
 
-        parallax_offset = self.parallax / 100.0
-        common_crop = min(self.hcrop[0][0], self.hcrop[1][0]), max(self.hcrop[0][1], self.hcrop[1][1])
-        width = (common_crop[1] - common_crop[0] + parallax_offset) * self.image.width
-        height = (self.vcrop[1] - self.vcrop[0]) * self.image.height
+        l_offset = self.hcrop[0][0] - self.parallax / 200.0
+        r_offset = self.hcrop[1][0] + self.parallax / 200.0
 
-        l_offset = self.hcrop[0][0] - common_crop[0]
-        r_offset = self.hcrop[1][0] - common_crop[0]
-        if parallax_offset > 0:
-            l_offset -= parallax_offset
-            if l_offset < 0:
-                r_offset -= l_offset
-                l_offset = 0
+        # Align one of the two images to the left of the final image:
+        if l_offset < r_offset:
+            r_offset -= l_offset
+            l_offset = 0
         else:
-            r_offset += parallax_offset
-            if r_offset < 0:
-                l_offset -= r_offset
-                r_offset = 0
+            l_offset -= r_offset
+            r_offset = 0
+
+        # Calculate the width taking cropping and parallax into account. The
+        # width will be the maximum required for the two images, but no more -
+        # one of the images should be aligned to the right.
+        width = max(self.hcrop[0][1] - self.hcrop[0][0] + l_offset, self.hcrop[1][1] - self.hcrop[1][0] + r_offset) * self.image.width
+        height = (self.vcrop[1] - self.vcrop[0]) * self.image.height
 
         new_img = Image.new(self.image.mode, (int(width) * 2, int(height)))
 

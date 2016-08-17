@@ -20,12 +20,13 @@
 from __future__ import print_function
 
 import sys, os
+import ctypes
+import numpy as np
+from collections import namedtuple
 
 from directx.types import *
 from directx.util import Frame
 from directx.d3d import IDirect3DVertexBuffer9, IDirect3DTexture9
-
-import ctypes
 
 from nvapi import *
 
@@ -34,8 +35,6 @@ from PIL import Image
 # Ensure this is a recent version of the pillow fork with support for stereo .mpo files
 # Haven't checked which version it was introduced in, don't really care either.
 assert(hasattr(PIL, 'PILLOW_VERSION') and map(int, PIL.PILLOW_VERSION.split('.')) >= [3, 3, 0])
-
-import numpy as np
 
 # Custom vertex and it's FVF code. This is outdated tech for fixed pipeline, we
 # might change it later.
@@ -64,6 +63,8 @@ class MODES:
             ord('C'): CROP,
             0x11: CROP, # VK_CONTROL
     }
+
+ImageRect = namedtuple('ImageRect', ['x', 'y', 'w', 'h', 'u1', 'v1', 'u2', 'v2'])
 
 def saturate(n):
     return min(max(n, 0.0), 1.0)
@@ -179,19 +180,31 @@ class CropTool(Frame):
     def OnMouse(self, (msg, x, y, wheel, modifiers)):
         if msg in (0x201, 0x204, 0x207): # Mouse down left/right/middle
             if self.mode == MODES.CROP:
-                # FIXME: Take panning into account
-                xp = float(x) / self.presentparams.BackBufferWidth
-                yp = float(y) / self.presentparams.BackBufferHeight
-                if xp > yp: # Top / Right
-                    if xp > 1 - yp:
+                xa = (self.rect_l.x + self.rect_r.x) / 2.0
+                wa = (self.rect_l.w + self.rect_r.w) / 2.0
+                if wa <= 0: # Divide by zero protection
+                    if x > xa:
                         self.mode = MODES.CROP_RIGHT
                     else:
-                        self.mode = MODES.CROP_TOP
-                else: # Bottom / Left
-                    if xp > 1 - yp:
+                        self.mode = MODES.CROP_LEFT
+                elif self.rect_l.h <= 0:
+                    if y > self.rect_l.x:
                         self.mode = MODES.CROP_BOTTOM
                     else:
-                        self.mode = MODES.CROP_LEFT
+                        self.mode = MODES.CROP_TOP
+                else:
+                    xp = float(x - xa) / wa
+                    yp = float(y - self.rect_l.y) / self.rect_l.h
+                    if xp > yp: # Top / Right
+                        if xp > 1 - yp:
+                            self.mode = MODES.CROP_RIGHT
+                        else:
+                            self.mode = MODES.CROP_TOP
+                    else: # Bottom / Left
+                        if xp > 1 - yp:
+                            self.mode = MODES.CROP_BOTTOM
+                        else:
+                            self.mode = MODES.CROP_LEFT
         elif msg in (0x202, 0x205, 0x208): # Mouse up left/right/middle
             if self.mode in (MODES.CROP_LEFT, MODES.CROP_RIGHT, MODES.CROP_TOP, MODES.CROP_BOTTOM):
                 self.mode = MODES.CROP
@@ -218,24 +231,24 @@ class CropTool(Frame):
                     self.parallax -= dix * 200.0
             elif self.mode == MODES.CROP_TOP:
                 if modifiers & 0x0013: # Any button down
-                    self.vcrop[0] = saturate(self.vcrop[0] + diy)
+                    self.vcrop[0] = min(saturate(self.vcrop[0] + diy), self.vcrop[1])
             elif self.mode == MODES.CROP_BOTTOM:
                 if modifiers & 0x0013: # Any button down
-                    self.vcrop[1] = saturate(self.vcrop[1] + diy)
+                    self.vcrop[1] = max(saturate(self.vcrop[1] + diy), self.vcrop[0])
             elif self.mode == MODES.CROP_LEFT:
                 if modifiers & 0x0001: # Left button down - crop left/right
-                    self.hcrop[1][0] = saturate(self.hcrop[1][0] + dix)
-                    self.hcrop[0][0] = saturate(self.hcrop[0][0] + dix)
+                    self.hcrop[1][0] = min(saturate(self.hcrop[1][0] + dix), self.hcrop[1][1])
+                    self.hcrop[0][0] = min(saturate(self.hcrop[0][0] + dix), self.hcrop[0][1])
                 elif modifiers & 0x0002: # Right buttons down - move up/down to crop back/forward
-                    self.hcrop[1][0] = saturate(self.hcrop[1][0] - diy / 2.0)
-                    self.hcrop[0][0] = saturate(self.hcrop[0][0] + diy / 2.0)
+                    self.hcrop[1][0] = min(saturate(self.hcrop[1][0] - diy / 2.0), self.hcrop[1][1])
+                    self.hcrop[0][0] = min(saturate(self.hcrop[0][0] + diy / 2.0), self.hcrop[0][1])
             elif self.mode == MODES.CROP_RIGHT:
                 if modifiers & 0x0001: # Left button down - crop left/right
-                    self.hcrop[1][1] = saturate(self.hcrop[1][1] + dix)
-                    self.hcrop[0][1] = saturate(self.hcrop[0][1] + dix)
+                    self.hcrop[1][1] = max(saturate(self.hcrop[1][1] + dix), self.hcrop[1][0])
+                    self.hcrop[0][1] = max(saturate(self.hcrop[0][1] + dix), self.hcrop[0][0])
                 elif modifiers & 0x0002: # Right buttons down - move up/down to crop back/forward
-                    self.hcrop[1][1] = saturate(self.hcrop[1][1] - diy / 2.0)
-                    self.hcrop[0][1] = saturate(self.hcrop[0][1] + diy / 2.0)
+                    self.hcrop[1][1] = max(saturate(self.hcrop[1][1] - diy / 2.0), self.hcrop[1][0])
+                    self.hcrop[0][1] = max(saturate(self.hcrop[0][1] + diy / 2.0), self.hcrop[0][0])
 
     def calc_rect(self, eye):
 
@@ -264,29 +277,29 @@ class CropTool(Frame):
         # Pan
         x, y = x + self.pan[0], y + self.pan[1]
 
-        return x, y, w, h, u1, v1, u2, v2
+        return ImageRect(x, y, w, h, u1, v1, u2, v2)
 
-    def update_vertex_buffer_eye(self, vbuffer, eye):
+    def update_vertex_buffer_eye(self, vbuffer, r):
         # Update the vertex buffer with the vertex positions and texture
         # coordinates that correspond to the current paralax and crop
         ptr = c_void_p()
         vbuffer.Lock(0, 0, byref(ptr), 0)
 
-        x, y, w, h, u1, v1, u2, v2 = self.calc_rect(eye)
-
         data = (Vertex * 4)(
-            #        X    Y  Z  RHW  U  V
-            Vertex(  x,   y, 1, 1.0, u1, v1),
-            Vertex(x+w,   y, 1, 1.0, u2, v1),
-            Vertex(  x, y+h, 1, 1.0, u1, v2),
-            Vertex(x+w, y+h, 1, 1.0, u2, v2),
+            #            X        Y  Z  RHW     U     V
+            Vertex(    r.x,     r.y, 1, 1.0, r.u1, r.v1),
+            Vertex(r.x+r.w,     r.y, 1, 1.0, r.u2, r.v1),
+            Vertex(    r.x, r.y+r.h, 1, 1.0, r.u1, r.v2),
+            Vertex(r.x+r.w, r.y+r.h, 1, 1.0, r.u2, r.v2),
         )
         ctypes.memmove(ptr, data, sizeof(Vertex) * 4)
         vbuffer.Unlock()
 
     def OnUpdate(self):
-        self.update_vertex_buffer_eye(self.vbuffer_l, -1)
-        self.update_vertex_buffer_eye(self.vbuffer_r,  1)
+        self.rect_l = self.calc_rect(-1)
+        self.rect_r = self.calc_rect( 1)
+        self.update_vertex_buffer_eye(self.vbuffer_l, self.rect_l)
+        self.update_vertex_buffer_eye(self.vbuffer_r, self.rect_r)
 
     def OnRender(self):
         self.device.SetFVF(VERTEXFVF)

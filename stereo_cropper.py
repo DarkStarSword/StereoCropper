@@ -116,11 +116,27 @@ class CropTool(Frame):
 
         return texture
 
-    def load_stereo_mpo(self, filename):
+    def get_image_eye(self, eye):
+        self.image_height = self.image.height
+        if self.image.format == 'MPO':
+            self.image.seek(eye == 1)
+            self.image_width = self.image.width
+            return self.image
+        elif self.image.format == 'JPEG':
+            self.image_width = self.image.width / 2
+            x = 0
+            if eye != 1:
+                x = self.image_width
+            return self.image.crop((x, 0, x + self.image_width, self.image_height))
+        else:
+            print('Unsupported image type: %s' % self.image.format)
+            sys.exit(1)
+
+    def load_stereo_image(self, filename):
         self.image = Image.open(filename)
-        texture_l = self.image_to_texture(self.image)
-        self.image.seek(1)
-        texture_r = self.image_to_texture(self.image)
+
+        texture_l = self.image_to_texture(self.get_image_eye(0))
+        texture_r = self.image_to_texture(self.get_image_eye(1))
 
         # FIXME: Read parallax tag from *second image's* EXIF info - this does
         # not seem to be available in Pillow yet.
@@ -149,28 +165,28 @@ class CropTool(Frame):
         # Calculate the width taking cropping and parallax into account. The
         # width will be the maximum required for the two images, but no more -
         # one of the images should be aligned to the right.
-        width = int(math.ceil(max(self.hcrop[0][1] - self.hcrop[0][0] + l_offset, self.hcrop[1][1] - self.hcrop[1][0] + r_offset) * self.image.width))
-        height = (self.vcrop[1] - self.vcrop[0]) * self.image.height
+        width = int(math.ceil(max(self.hcrop[0][1] - self.hcrop[0][0] + l_offset, self.hcrop[1][1] - self.hcrop[1][0] + r_offset) * self.image_width))
+        height = (self.vcrop[1] - self.vcrop[0]) * self.image_height
 
         byteswapped_background = struct.unpack('<I', struct.pack('>I', self.background))[0] >> 8
         new_img = Image.new(self.image.mode, (width * 2, int(round(height))), byteswapped_background)
 
-        self.image.seek(0)
-        l_img = self.image.crop((
-            self.hcrop[0][0] * self.image.width,
-            self.vcrop   [0] * self.image.height,
-            self.hcrop[0][1] * self.image.width,
-            self.vcrop   [1] * self.image.height))
-        new_img.paste(l_img, (width + int(round(l_offset * self.image.width)), 0))
+        image = self.get_image_eye(0)
+        l_img = image.crop((
+            self.hcrop[0][0] * image.width,
+            self.vcrop   [0] * image.height,
+            self.hcrop[0][1] * image.width,
+            self.vcrop   [1] * image.height))
+        new_img.paste(l_img, (width + int(round(l_offset * image.width)), 0))
         l_img.close()
 
-        self.image.seek(1)
-        r_img = self.image.crop((
-            self.hcrop[1][0] * self.image.width,
-            self.vcrop   [0] * self.image.height,
-            self.hcrop[1][1] * self.image.width,
-            self.vcrop   [1] * self.image.height))
-        new_img.paste(r_img, (int(round(r_offset * self.image.width)), 0))
+        image = self.get_image_eye(1)
+        r_img = image.crop((
+            self.hcrop[1][0] * image.width,
+            self.vcrop   [0] * image.height,
+            self.hcrop[1][1] * image.width,
+            self.vcrop   [1] * image.height))
+        new_img.paste(r_img, (int(round(r_offset * image.width)), 0))
         r_img.close()
 
         new_img.save(filename, format='JPEG')
@@ -182,7 +198,7 @@ class CropTool(Frame):
         NvAPI.Stereo_CreateHandleFromIUnknown(self.device, byref(self.stereo_handle))
 
         # Load both images from the MPO file into a pair of textures:
-        self.texture_l, self.texture_r = self.load_stereo_mpo(self.filename)
+        self.texture_l, self.texture_r = self.load_stereo_image(self.filename)
 
         # Create two vertex buffers for the images in each eye. Later we might
         # switch to the programmable pipeline and work out the offsets in the
@@ -202,11 +218,11 @@ class CropTool(Frame):
 
     def fit_to_window(self):
         res_a = float(self.presentparams.BackBufferWidth) / self.presentparams.BackBufferHeight
-        a = float(self.image.width) / self.image.height
+        a = float(self.image_width) / self.image_height
         if a > res_a:
-            self.scale = float(self.presentparams.BackBufferWidth) / self.image.width
+            self.scale = float(self.presentparams.BackBufferWidth) / self.image_width
         else:
-            self.scale = float(self.presentparams.BackBufferHeight) / self.image.height
+            self.scale = float(self.presentparams.BackBufferHeight) / self.image_height
         self.pan = (0, 0)
 
     def OnInit(self):
@@ -284,14 +300,14 @@ class CropTool(Frame):
             else:
                 dx = x - self.mouse_last[0]
                 dy = y - self.mouse_last[1]
-                dix = dx / self.scale / self.image.width
-                diy = dy / self.scale / self.image.height
+                dix = dx / self.scale / self.image_width
+                diy = dy / self.scale / self.image_height
             self.mouse_last = x, y
             if self.mode == MODES.DEFAULT:
                 if modifiers & 0x0001: # Left button down - panning
                     self.pan = self.pan[0] + dx, self.pan[1] + dy
                 if modifiers & 0x0010: # Middle button down - parallax adjustment
-                    self.parallax += dy / self.scale / self.image.height * 100.0
+                    self.parallax += dy / self.scale / self.image_height * 100.0
                     self.dirty = True
             elif self.mode == MODES.PARALLAX:
                 if modifiers & 0x0001: # Left button down
@@ -344,12 +360,12 @@ class CropTool(Frame):
         x += eye / 2.0 * self.parallax / 100.0
 
         # Scale
-        iw = self.image.width * self.scale
-        ih = self.image.height * self.scale
+        iw = self.image_width * self.scale
+        ih = self.image_height * self.scale
         w = w * iw
         h = h * ih
-        x = x * self.image.width * self.scale + (self.presentparams.BackBufferWidth - iw) / 2
-        y = y * self.image.height * self.scale + (self.presentparams.BackBufferHeight - ih) / 2
+        x = x * self.image_width * self.scale + (self.presentparams.BackBufferWidth - iw) / 2
+        y = y * self.image_height * self.scale + (self.presentparams.BackBufferHeight - ih) / 2
 
         # Pan
         x, y = x + self.pan[0], y + self.pan[1]

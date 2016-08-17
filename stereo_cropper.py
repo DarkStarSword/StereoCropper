@@ -62,6 +62,7 @@ class MODES:
     hold_keys = {
             ord('P'): PARALLAX,
             ord('C'): CROP,
+            0x11: CROP, # VK_CONTROL
     }
 
 def saturate(n):
@@ -153,15 +154,24 @@ class CropTool(Frame):
         self.fit_to_window()
 
     def OnKey(self, (msg, wParam, lParam)):
-        if msg == 0x100 and not lParam & 0x40000000: # normal WM_KEYDOWN that is not a repeat
+        if msg == 0x100 and not lParam & 0x40000000: # WM_KEYDOWN that is not a repeat
             # Borrow some geeqie style key bindings, and some custom ones
-            if wParam == ord('Z'):
+            if wParam == 0x1B: # Escape
+                self.Quit()
+            elif wParam == ord('Z'):
                 self.scale = 1.0
                 self.pan = (0, 0)
             elif wParam == ord('X'):
                 self.fit_to_window()
+            elif wParam == ord('F'):
+                self.ToggleFullscreen()
+                self.fit_to_window()
             elif wParam in MODES.hold_keys:
                 self.mode = MODES.hold_keys[wParam]
+        elif msg == 0x105 and not lParam & 0x40000000: # WM_SYSKEYDOWN that is not a repeat:
+            if wParam == 0x79: # F10
+                self.ToggleFullscreen()
+                self.fit_to_window()
         elif msg == 0x101: # WM_KEYUP
             if wParam in MODES.hold_keys:
                 self.mode = MODES.DEFAULT

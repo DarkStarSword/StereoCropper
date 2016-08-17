@@ -684,19 +684,7 @@ def _WndProc(hwnd, msg, wParam, lParam):
             self.OnChar(char)
             return 0
         elif msg in _keyevents:
-            #We "steal" some panic keys.
-            if msg == 0x0105: #System key down.
-                if wParam == 0x79: #F10
-                    self.ToggleFullscreen()
-            elif msg == 0x0100: #Normal key down.
-                if wParam == 0x1B: #Esc
-                    #ctypes seems to respect SystemExit
-                    #in callbacks?
-                    self.Quit()
-                else:
-                    self.OnKey(args)
-            else:
-                self.OnKey(args)
+            self.OnKey(args)
             return 0
         elif msg == 0x0084:
             #WM_NCHITTEST

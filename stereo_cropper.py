@@ -23,6 +23,7 @@ import sys, os
 import ctypes, struct, math
 import numpy as np
 from collections import namedtuple
+import Tkinter, tkFileDialog
 
 from directx.types import *
 from directx.util import Frame
@@ -461,8 +462,17 @@ def main():
     try:
         filename = sys.argv[1]
     except IndexError:
-        print('usage: %s filename.mpo' % (sys.argv[0]))
-        return
+        root = Tkinter.Tk()
+        root.withdraw()
+        filename = tkFileDialog.askopenfilename(filetypes = [
+            ('Stereo Images', ('.mpo', '.jps')),
+            ('MPO files', '.mpo'),
+            ('JPS files', '.jps'),
+            ('All files', '*')
+            ])
+        if not filename:
+            return
+
     f = CropTool(filename, "Stereo Photo Cropping Tool")
     f.Mainloop()
 

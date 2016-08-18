@@ -455,10 +455,6 @@ def enable_stereo_in_windowed_mode():
     # NvAPI.DRS_DestroySession(drs_handle)
 
 def main():
-    NvAPI.Initialize()
-    enable_stereo_in_windowed_mode()
-    NvAPI.Stereo_SetDriverMode(STEREO_DRIVER_MODE.DIRECT)
-
     try:
         filename = sys.argv[1]
     except IndexError:
@@ -472,6 +468,10 @@ def main():
             ])
         if not filename:
             return
+
+    NvAPI.Initialize()
+    enable_stereo_in_windowed_mode()
+    NvAPI.Stereo_SetDriverMode(STEREO_DRIVER_MODE.DIRECT)
 
     f = CropTool(filename, "Stereo Photo Cropping Tool")
     f.Mainloop()

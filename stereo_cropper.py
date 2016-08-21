@@ -298,12 +298,14 @@ class CropTool(Frame):
 
     def fit_to_window(self):
         res_a = float(self.presentparams.BackBufferWidth) / self.presentparams.BackBufferHeight
-        # We use the last rectangles here to skip calculations for parallax and
-        # vertical offset when finding the new scale values:
-        minx = min(self.rect[0].x, self.rect[1].x)
-        maxx = max(self.rect[0].x + self.rect[0].w, self.rect[1].x + self.rect[1].w)
-        w = (maxx - minx) / self.scale
-        h = self.rect[0].h / self.scale
+        # There are some edge cases where we need to take the parallax into
+        # account, so we can't just use the previous frame's rectangle. e.g.
+        # make the left image max width but shrink the right image on both left
+        # and right, adjust parallax and fit to window.
+        minc = min(self.hcrop[0][0], self.hcrop[1][0])
+        maxc = max(self.hcrop[0][1], self.hcrop[1][1])
+        w = (maxc - minc + abs(self.parallax / 100.0)) * self.image_width
+        h = (self.vcrop[1] - self.vcrop[0] - abs(self.vertical_alignment)) * self.image_height
         a = w / h
         if a > res_a:
             self.scale = float(self.presentparams.BackBufferWidth) / w
@@ -313,10 +315,8 @@ class CropTool(Frame):
         # But we do use the crop values to calculate the new pan. Since this
         # will be centered the parallax and vertical adjustments can be
         # ignored:
-        minc = min(self.hcrop[0][0], self.hcrop[1][0])
-        maxc = max(self.hcrop[0][1], self.hcrop[1][1])
-        self.pan = ((1.0 - maxc - minc) * self.image.width * self.scale / 2.0,
-                (1.0 - self.vcrop[1] - self.vcrop[0]) * self.image.height * self.scale / 2.0)
+        self.pan = ((1.0 - maxc - minc) * self.image_width * self.scale / 2.0,
+                (1.0 - self.vcrop[1] - self.vcrop[0]) * self.image_height * self.scale / 2.0)
 
     def OnInit(self):
         self.ToggleFullscreen()

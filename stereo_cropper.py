@@ -418,7 +418,7 @@ class CropTool(Frame):
                 if modifiers & 0x0001: # Left button down - panning
                     self.pan = self.pan[0] + dx, self.pan[1] + dy
                 if modifiers & 0x0010: # Middle button down - parallax adjustment
-                    self.parallax += dy / self.scale / self.image_height * 100.0
+                    self.parallax += dy / self.scale / self.image_height * 50.0
                     self.dirty = True
             elif self.mode == MODES.PARALLAX:
                 if modifiers & 0x0001: # Left button down
@@ -448,8 +448,8 @@ class CropTool(Frame):
                     self.hcrop[0][0] = min(saturate(self.hcrop[0][0] + dix), self.hcrop[0][1])
                     self.dirty = True
                 elif modifiers & 0x0002: # Right buttons down - move up/down to crop back/forward
-                    self.hcrop[1][0] = min(saturate(self.hcrop[1][0] - diy / 2.0), self.hcrop[1][1])
-                    self.hcrop[0][0] = min(saturate(self.hcrop[0][0] + diy / 2.0), self.hcrop[0][1])
+                    self.hcrop[1][0] = min(saturate(self.hcrop[1][0] - diy / 4.0), self.hcrop[1][1])
+                    self.hcrop[0][0] = min(saturate(self.hcrop[0][0] + diy / 4.0), self.hcrop[0][1])
                     self.dirty = True
             elif self.mode == MODES.CROP_RIGHT:
                 if modifiers & 0x0001: # Left button down - crop left/right
@@ -457,8 +457,8 @@ class CropTool(Frame):
                     self.hcrop[0][1] = max(saturate(self.hcrop[0][1] + dix), self.hcrop[0][0])
                     self.dirty = True
                 elif modifiers & 0x0002: # Right buttons down - move up/down to crop back/forward
-                    self.hcrop[1][1] = max(saturate(self.hcrop[1][1] - diy / 2.0), self.hcrop[1][0])
-                    self.hcrop[0][1] = max(saturate(self.hcrop[0][1] + diy / 2.0), self.hcrop[0][0])
+                    self.hcrop[1][1] = max(saturate(self.hcrop[1][1] - diy / 4.0), self.hcrop[1][0])
+                    self.hcrop[0][1] = max(saturate(self.hcrop[0][1] + diy / 4.0), self.hcrop[0][0])
                     self.dirty = True
 
     def calc_rect(self, eye):

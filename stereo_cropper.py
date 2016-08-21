@@ -150,6 +150,7 @@ class CropTool(Frame):
         self.background = backgrounds[0]
         self.dirty = False
         self.output_format = OUTPUT_FORMAT.NV3D
+        self.swap_eyes = False
         return Frame.__init__(self, *a, **kw)
 
     def image_to_texture(self, image):
@@ -329,6 +330,8 @@ class CropTool(Frame):
                 self.cycle_background_colours()
             elif wParam == ord('O'):
                 self.cycle_output_formats()
+            elif wParam == ord('I'):
+                self.swap_eyes = not self.swap_eyes
             elif wParam in MODES.hold_keys:
                 self.mode = MODES.hold_keys[wParam]
         elif msg == 0x105 and not lParam & 0x40000000: # WM_SYSKEYDOWN that is not a repeat:
@@ -502,6 +505,8 @@ class CropTool(Frame):
         for eye_idx, nveye in ((0, STEREO_ACTIVE_EYE.LEFT), (1, STEREO_ACTIVE_EYE.RIGHT)):
             NvAPI.Stereo_SetActiveEye(self.stereo_handle, nveye)
             self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff000000 | self.background, 1.0, 0)
+            if self.swap_eyes:
+                eye_idx = 1 - eye_idx
             self.render_eye(eye_idx)
 
     def render_sbs(self):
@@ -515,7 +520,10 @@ class CropTool(Frame):
         viewport.MaxZ = 1
 
         for eye in (0, 1):
-            OUTPUT_FORMAT.set_viewport(viewport, self.output_format, eye,
+            eye1 = eye
+            if self.swap_eyes:
+                eye1 = 1 - eye
+            OUTPUT_FORMAT.set_viewport(viewport, self.output_format, eye1,
                     self.presentparams.BackBufferWidth, self.presentparams.BackBufferHeight)
             self.device.SetViewport(byref(viewport))
             self.render_eye(eye)

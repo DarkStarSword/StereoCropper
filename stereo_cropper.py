@@ -287,7 +287,7 @@ class CropTool(Frame):
         del self.texture
         del self.vbuffer
 
-    def fit_to_window(self):
+    def fit_to_window_uncropped(self):
         res_a = float(self.presentparams.BackBufferWidth) / self.presentparams.BackBufferHeight
         a = float(self.image_width) / self.image_height
         if a > res_a:
@@ -296,9 +296,31 @@ class CropTool(Frame):
             self.scale = float(self.presentparams.BackBufferHeight) / self.image_height
         self.pan = (0.0, 0.0)
 
+    def fit_to_window(self):
+        res_a = float(self.presentparams.BackBufferWidth) / self.presentparams.BackBufferHeight
+        # We use the last rectangles here to skip calculations for parallax and
+        # vertical offset when finding the new scale values:
+        minx = min(self.rect[0].x, self.rect[1].x)
+        maxx = max(self.rect[0].x + self.rect[0].w, self.rect[1].x + self.rect[1].w)
+        w = (maxx - minx) / self.scale
+        h = self.rect[0].h / self.scale
+        a = w / h
+        if a > res_a:
+            self.scale = float(self.presentparams.BackBufferWidth) / w
+        else:
+            self.scale = float(self.presentparams.BackBufferHeight) / h
+
+        # But we do use the crop values to calculate the new pan. Since this
+        # will be centered the parallax and vertical adjustments can be
+        # ignored:
+        minc = min(self.hcrop[0][0], self.hcrop[1][0])
+        maxc = max(self.hcrop[0][1], self.hcrop[1][1])
+        self.pan = ((1.0 - maxc - minc) * self.image.width * self.scale / 2.0,
+                (1.0 - self.vcrop[1] - self.vcrop[0]) * self.image.height * self.scale / 2.0)
+
     def OnInit(self):
         self.ToggleFullscreen()
-        self.fit_to_window()
+        self.fit_to_window_uncropped()
 
     def cycle_background_colours(self):
         self.background = backgrounds[(backgrounds.index(self.background) + 1) % len(backgrounds)]

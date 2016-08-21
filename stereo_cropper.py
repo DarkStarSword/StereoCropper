@@ -400,7 +400,12 @@ class CropTool(Frame):
             if self.mode in (MODES.CROP_LEFT, MODES.CROP_RIGHT, MODES.CROP_TOP, MODES.CROP_BOTTOM):
                 self.mode = MODES.CROP
         elif msg == 0x20a: # Mouse wheel
-            self.scale = max(self.scale * (1.0 + wheel / 900.0), 0.025)
+            x, y = OUTPUT_FORMAT.translate_mouse(self.output_format, x, y,
+                    self.presentparams.BackBufferWidth, self.presentparams.BackBufferHeight)
+            new_scale = max(self.scale * (1.0 + wheel / 900.0), 0.025)
+            self.pan = ((self.pan[0] - x + self.presentparams.BackBufferWidth / 2.0) * new_scale / self.scale + x - self.presentparams.BackBufferWidth / 2.0,
+                        (self.pan[1] - y + self.presentparams.BackBufferHeight / 2.0) * new_scale / self.scale + y - self.presentparams.BackBufferHeight / 2.0)
+            self.scale = new_scale
         elif msg == 0x200: # Mouse move
             if self.mouse_last is None:
                 dx = dy = dix = diy = 0

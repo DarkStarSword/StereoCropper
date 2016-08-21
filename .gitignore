@@ -3,3 +3,7 @@ __pycache__
 *.swp
 *~
 Sample*.py
+build
+dist
+stereo_cropper.spec
+upx391w

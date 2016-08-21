@@ -69,10 +69,12 @@ class MODES:
     CROP_RIGHT = 4
     CROP_TOP = 5
     CROP_BOTTOM = 6
+    VERTICAL_ALIGNMENT = 7
     hold_keys = {
             ord('P'): PARALLAX,
             ord('C'): CROP,
             0x11: CROP, # VK_CONTROL
+            ord('V'): VERTICAL_ALIGNMENT,
     }
 
 ImageRect = namedtuple('ImageRect', ['x', 'y', 'w', 'h', 'u1', 'v1', 'u2', 'v2'])
@@ -90,6 +92,7 @@ class CropTool(Frame):
         self.mode = MODES.DEFAULT
         self.pan = (0, 0)
         self.parallax = 0.0
+        self.vertical_alignment = 0.0
         self.vcrop = [0.0, 1.0]
         self.hcrop = [[0.0, 1.0], [0.0, 1.0]]
         self.background = backgrounds[0]
@@ -152,43 +155,51 @@ class CropTool(Frame):
             i += 1
             filename = base_filename + '-%d.jps' % i
 
-        l_offset = self.hcrop[0][0] - self.parallax / 200.0
-        r_offset = self.hcrop[1][0] + self.parallax / 200.0
+        h_offset = [self.hcrop[0][0] - self.parallax / 200.0,
+                    self.hcrop[1][0] + self.parallax / 200.0]
 
         # Align one of the two images to the left of the final image:
-        if l_offset < r_offset:
-            r_offset -= l_offset
-            l_offset = 0.0
+        if h_offset[0] < h_offset[1]:
+            h_offset[1] -= h_offset[0]
+            h_offset[0] = 0.0
         else:
-            l_offset -= r_offset
-            r_offset = 0.0
+            h_offset[0] -= h_offset[1]
+            h_offset[1] = 0.0
 
         # Calculate the width taking cropping and parallax into account. The
         # width will be the maximum required for the two images, but no more -
         # one of the images should be aligned to the right.
-        width = int(math.ceil(max(self.hcrop[0][1] - self.hcrop[0][0] + l_offset, self.hcrop[1][1] - self.hcrop[1][0] + r_offset) * self.image_width))
-        height = (self.vcrop[1] - self.vcrop[0]) * self.image_height
+        # FIXME: There is still a minor off by one error that might result in a
+        # single black column on the right of an image that shouldn't be there,
+        # depending on floating point rounding.
+        width = int(math.ceil(max(self.hcrop[0][1] - self.hcrop[0][0] + h_offset[0], self.hcrop[1][1] - self.hcrop[1][0] + h_offset[1]) * self.image_width))
+        height = (self.vcrop[1] - self.vcrop[0] - abs(self.vertical_alignment)) * self.image_height
 
         byteswapped_background = struct.unpack('<I', struct.pack('>I', self.background))[0] >> 8
         new_img = Image.new(self.image.mode, (width * 2, int(round(height))), byteswapped_background)
 
-        image = self.get_image_eye(0)
-        l_img = image.crop((
-            self.hcrop[0][0] * image.width,
-            self.vcrop   [0] * image.height,
-            self.hcrop[0][1] * image.width,
-            self.vcrop   [1] * image.height))
-        new_img.paste(l_img, (width + int(round(l_offset * image.width)), 0))
-        l_img.close()
+        for eye_idx, eye_multiplier in ((0, -1.0), (1, 1.0)):
+            # Vertical alignment
+            adj = eye_multiplier * self.vertical_alignment
+            adj1 = adj2 = 0
+            if adj > 0:
+                adj1 = adj
+            else:
+                adj2 = adj
 
-        image = self.get_image_eye(1)
-        r_img = image.crop((
-            self.hcrop[1][0] * image.width,
-            self.vcrop   [0] * image.height,
-            self.hcrop[1][1] * image.width,
-            self.vcrop   [1] * image.height))
-        new_img.paste(r_img, (int(round(r_offset * image.width)), 0))
-        r_img.close()
+            # Left image goes on the right:
+            side_off = 0
+            if eye_idx == 0:
+                side_off = width
+
+            image = self.get_image_eye(eye_idx)
+            cropped = image.crop((
+                self.hcrop[eye_idx][0] * image.width,
+                (self.vcrop[0] + adj1) * image.height,
+                self.hcrop[eye_idx][1] * image.width,
+                (self.vcrop[1] + adj2) * image.height))
+            new_img.paste(cropped, (side_off + int(round(h_offset[eye_idx] * image.width)), 0))
+            cropped.close()
 
         new_img.save(filename, format='JPEG')
         new_img.close()
@@ -317,6 +328,13 @@ class CropTool(Frame):
                 elif modifiers & 0x0002: # Right button down
                     self.parallax -= dix * 200.0
                     self.dirty = True
+            elif self.mode == MODES.VERTICAL_ALIGNMENT:
+                if modifiers & 0x0001: # Left button down
+                    self.vertical_alignment += diy * 2.0
+                    self.dirty = True
+                elif modifiers & 0x0002: # Right button down
+                    self.vertical_alignment -= diy * 2.0
+                    self.dirty = True
             elif self.mode == MODES.CROP_TOP:
                 if modifiers & 0x0013: # Any button down
                     self.vcrop[0] = min(saturate(self.vcrop[0] + diy), self.vcrop[1])
@@ -348,14 +366,22 @@ class CropTool(Frame):
 
         # Crop
         u1 = self.hcrop[eye == 1.0][0]
-        v1 = self.vcrop[0]
         u2 = self.hcrop[eye == 1.0][1]
+        x = u1
+        w = u2 - u1
+        v1 = self.vcrop[0]
         v2 = self.vcrop[1]
+        y = v1
+        h = v2 - v1
 
-        x = self.hcrop[eye == 1.0][0]
-        y = self.vcrop[0]
-        w = self.hcrop[eye == 1.0][1] - self.hcrop[eye == 1.0][0]
-        h = self.vcrop[1] - self.vcrop[0]
+        # Vertical alignment
+        adj = eye * self.vertical_alignment
+        if adj > 0:
+            v1 += adj
+        else:
+            v2 += adj
+        y += abs(adj / 2.0)
+        h -= abs(adj)
 
         # Parallax
         x += eye / 2.0 * self.parallax / 100.0

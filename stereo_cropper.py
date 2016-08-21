@@ -150,6 +150,7 @@ class CropTool(Frame):
         self.background = backgrounds[0]
         self.dirty = False
         self.output_format = OUTPUT_FORMAT.NV3D
+        self.check_output_format()
         self.swap_eyes = False
         return Frame.__init__(self, *a, **kw)
 
@@ -260,14 +261,15 @@ class CropTool(Frame):
         self.dirty = False
 
     def OnCreateDevice(self):
+        global nv3d
         self.stereo_handle = c_void_p()
-        try:
-            NvAPI.Stereo_CreateHandleFromIUnknown(self.device, byref(self.stereo_handle))
-        except NvAPI_Exception as e:
-            print('Unable to initialise 3D Vision: %s' % str(e))
-            global nv3d
-            nv3d = False
-            self.check_output_format()
+        if nv3d:
+            try:
+                NvAPI.Stereo_CreateHandleFromIUnknown(self.device, byref(self.stereo_handle))
+            except NvAPI_Exception as e:
+                print('Unable to initialise 3D Vision: %s' % str(e))
+                nv3d = False
+                self.check_output_format()
 
         # Load both images from the MPO file into a pair of textures:
         self.texture = self.load_stereo_image(self.filename)
@@ -590,6 +592,7 @@ def enable_stereo_in_windowed_mode():
     # NvAPI.DRS_DestroySession(drs_handle)
 
 def main():
+    global nv3d
     try:
         filename = sys.argv[1]
     except IndexError:
@@ -604,14 +607,19 @@ def main():
         if not filename:
             return
 
-    NvAPI.Initialize()
-    enable_stereo_in_windowed_mode()
-    NvAPI.Stereo_SetDriverMode(STEREO_DRIVER_MODE.DIRECT)
+    try:
+        NvAPI.Initialize()
+    except NvAPI_Exception:
+        nv3d = False
+    else:
+        enable_stereo_in_windowed_mode()
+        NvAPI.Stereo_SetDriverMode(STEREO_DRIVER_MODE.DIRECT)
 
     f = CropTool(filename, "Stereo Photo Cropping Tool")
     f.Mainloop()
 
-    NvAPI.Unload()
+    if nv3d:
+        NvAPI.Unload()
 
 if __name__ == '__main__':
     main()

@@ -561,7 +561,13 @@ def MAKE_NVAPI_VERSION(struct, version):
 	return sizeof(struct) | (version << 16)
 
 class _NvAPI(object):
-	nvapi_QueryInterface = cdll.nvapi.nvapi_QueryInterface
+	try:
+		nvapi_QueryInterface = cdll.nvapi.nvapi_QueryInterface
+	except:
+		try:
+			nvapi_QueryInterface = cdll.nvapi64.nvapi_QueryInterface
+		except:
+			nvapi_QueryInterface = None
 
 	class _nvapi_FuncPtr(CFuncPtr):
 		_flags_ = ctypes._FUNCFLAG_CDECL
@@ -582,6 +588,11 @@ class _NvAPI(object):
 		return f
 
 	def __getattr__(self, name):
+		def no_nvapi(*a, **kw):
+			raise NvAPI_Exception('No nvapi support')
+		if self.nvapi_QueryInterface is None:
+			return no_nvapi
+
 		id = nvapi_ids[name]
 		ptr = self.nvapi_QueryInterface(id)
 		f = self.wrap_errors(self._nvapi_FuncPtr(ptr))

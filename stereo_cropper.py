@@ -37,6 +37,8 @@ from PIL import Image
 # Haven't checked which version it was introduced in, don't really care either.
 assert(hasattr(PIL, 'PILLOW_VERSION') and map(int, PIL.PILLOW_VERSION.split('.')) >= [3, 3, 0])
 
+nv3d = True
+
 backgrounds = (
     0x000000,
     0xffffff,
@@ -54,12 +56,11 @@ class Vertex(Structure):
         ('x', c_float),
         ('y', c_float),
         ('z', c_float),
-        ('rhw', c_float),
         ('u', c_float),
         ('v', c_float),
     ]
 
-VERTEXFVF = D3DFVF.XYZRHW | D3DFVF.TEX2
+VERTEXFVF = D3DFVF.XYZ | D3DFVF.TEX2
 
 class MODES:
     DEFAULT = 0
@@ -77,6 +78,57 @@ class MODES:
             ord('V'): VERTICAL_ALIGNMENT,
     }
 
+class OUTPUT_FORMAT:
+    NV3D = 0
+    SBSFH = 1
+    SBSHH = 2
+    TABFW = 3
+    TABHW = 4
+    MONO  = 5
+    NUM = MONO + 1
+
+    viewports = {
+        #          Left eye                    Right eye
+        SBSFH: [[0.0 , 0.0 , 0.5, 1.0], [0.5 , 0.0 , 0.5, 1.0]],
+        SBSHH: [[0.0 , 0.25, 0.5, 0.5], [0.5 , 0.25, 0.5, 0.5]],
+        TABFW: [[0.0 , 0.0 , 1.0, 0.5], [0.0 , 0.5 , 1.0, 0.5]],
+        TABHW: [[0.25, 0.0 , 0.5, 0.5], [0.25, 0.5 , 0.5, 0.5]],
+        MONO:  [[0.0 , 0.0 , 1.0, 1.0], [0.0 , 0.0 , 0.0, 0.0]],
+    }
+
+    @classmethod
+    def set_viewport(cls, viewport, format, eye_idx, width, height):
+        if format not in cls.viewports:
+            viewport.X = 0
+            viewport.Y = 0
+            viewport.Width = width
+            viewport.Height = height
+            return
+
+        vp = cls.viewports[format][eye_idx]
+        viewport.X = int(vp[0] * width)
+        viewport.Y = int(vp[1] * height)
+        viewport.Width = int(vp[2] * width)
+        viewport.Height = int(vp[3] * height)
+
+    @classmethod
+    def translate_mouse(cls, format, x, y, width, height):
+        if format not in cls.viewports:
+            return x, y
+        vp = cls.viewports[format]
+        x = (float(x) / width - vp[0][0]) / vp[0][2]
+        y = (float(y) / height - vp[0][1]) / vp[0][3]
+        if format in (cls.SBSFH, cls.SBSHH) and x >= 1.0: x -= 1.0
+        if format in (cls.TABFW, cls.TABHW) and y >= 1.0: y -= 1.0
+        return int(x * width), int(y * height)
+
+    @classmethod
+    def scale_mouse(cls, format, dx, dy):
+        if format not in cls.viewports:
+            return dx, dy
+        vp = cls.viewports[format]
+        return dx / vp[0][2], dy / vp[0][3]
+
 ImageRect = namedtuple('ImageRect', ['x', 'y', 'w', 'h', 'u1', 'v1', 'u2', 'v2'])
 
 def saturate(n):
@@ -90,13 +142,14 @@ class CropTool(Frame):
         self.scale = 1.0
         self.mouse_last = None
         self.mode = MODES.DEFAULT
-        self.pan = (0, 0)
+        self.pan = (0.0, 0.0)
         self.parallax = 0.0
         self.vertical_alignment = 0.0
         self.vcrop = [0.0, 1.0]
         self.hcrop = [[0.0, 1.0], [0.0, 1.0]]
         self.background = backgrounds[0]
         self.dirty = False
+        self.output_format = OUTPUT_FORMAT.NV3D
         return Frame.__init__(self, *a, **kw)
 
     def image_to_texture(self, image):
@@ -207,26 +260,29 @@ class CropTool(Frame):
 
     def OnCreateDevice(self):
         self.stereo_handle = c_void_p()
-        NvAPI.Stereo_CreateHandleFromIUnknown(self.device, byref(self.stereo_handle))
+        try:
+            NvAPI.Stereo_CreateHandleFromIUnknown(self.device, byref(self.stereo_handle))
+        except NvAPI_Exception as e:
+            print('Unable to initialise 3D Vision: %s' % str(e))
+            global nv3d
+            nv3d = False
+            self.check_output_format()
 
         # Load both images from the MPO file into a pair of textures:
-        self.texture_l, self.texture_r = self.load_stereo_image(self.filename)
+        self.texture = self.load_stereo_image(self.filename)
 
         # Create two vertex buffers for the images in each eye. Later we might
         # switch to the programmable pipeline and work out the offsets in the
         # vertex shader instead, but for now this is easier
-        self.vbuffer_l = POINTER(IDirect3DVertexBuffer9)()
-        self.vbuffer_r = POINTER(IDirect3DVertexBuffer9)()
+        self.vbuffer = [POINTER(IDirect3DVertexBuffer9)(), POINTER(IDirect3DVertexBuffer9)()]
         self.device.CreateVertexBuffer(sizeof(Vertex) * 4, 0, 0,
-            D3DPOOL.MANAGED, byref(self.vbuffer_l), None)
+            D3DPOOL.MANAGED, byref(self.vbuffer[0]), None)
         self.device.CreateVertexBuffer(sizeof(Vertex) * 4, 0, 0,
-            D3DPOOL.MANAGED, byref(self.vbuffer_r), None)
+            D3DPOOL.MANAGED, byref(self.vbuffer[1]), None)
 
     def OnDestroyDevice(self):
-        del self.texture_l
-        del self.texture_r
-        del self.vbuffer_l
-        del self.vbuffer_r
+        del self.texture
+        del self.vbuffer
 
     def fit_to_window(self):
         res_a = float(self.presentparams.BackBufferWidth) / self.presentparams.BackBufferHeight
@@ -235,7 +291,7 @@ class CropTool(Frame):
             self.scale = float(self.presentparams.BackBufferWidth) / self.image_width
         else:
             self.scale = float(self.presentparams.BackBufferHeight) / self.image_height
-        self.pan = (0, 0)
+        self.pan = (0.0, 0.0)
 
     def OnInit(self):
         self.ToggleFullscreen()
@@ -243,6 +299,14 @@ class CropTool(Frame):
 
     def cycle_background_colours(self):
         self.background = backgrounds[(backgrounds.index(self.background) + 1) % len(backgrounds)]
+
+    def check_output_format(self):
+        if not nv3d and self.output_format == OUTPUT_FORMAT.NV3D:
+            self.output_format += 1
+
+    def cycle_output_formats(self):
+        self.output_format = (self.output_format + 1) % OUTPUT_FORMAT.NUM
+        self.check_output_format()
 
     def OnKey(self, (msg, wParam, lParam)):
         if msg == 0x100 and not lParam & 0x40000000: # WM_KEYDOWN that is not a repeat
@@ -253,7 +317,7 @@ class CropTool(Frame):
                 self.Quit()
             elif wParam == ord('Z'):
                 self.scale = 1.0
-                self.pan = (0, 0)
+                self.pan = (0.0, 0.0)
             elif wParam == ord('X'):
                 self.fit_to_window()
             elif wParam == ord('F'):
@@ -263,6 +327,8 @@ class CropTool(Frame):
                 self.save_adjusted_jps()
             elif wParam == ord('B'):
                 self.cycle_background_colours()
+            elif wParam == ord('O'):
+                self.cycle_output_formats()
             elif wParam in MODES.hold_keys:
                 self.mode = MODES.hold_keys[wParam]
         elif msg == 0x105 and not lParam & 0x40000000: # WM_SYSKEYDOWN that is not a repeat:
@@ -276,21 +342,23 @@ class CropTool(Frame):
     def OnMouse(self, (msg, x, y, wheel, modifiers)):
         if msg in (0x201, 0x204, 0x207): # Mouse down left/right/middle
             if self.mode == MODES.CROP:
-                xa = (self.rect_l.x + self.rect_r.x) / 2.0
-                wa = (self.rect_l.w + self.rect_r.w) / 2.0
+                x, y = OUTPUT_FORMAT.translate_mouse(self.output_format, x, y,
+                        self.presentparams.BackBufferWidth, self.presentparams.BackBufferHeight)
+                xa = (self.rect[0].x + self.rect[1].x) / 2.0
+                wa = (self.rect[0].w + self.rect[1].w) / 2.0
                 if wa <= 0: # Divide by zero protection
                     if x > xa:
                         self.mode = MODES.CROP_RIGHT
                     else:
                         self.mode = MODES.CROP_LEFT
-                elif self.rect_l.h <= 0:
-                    if y > self.rect_l.x:
+                elif self.rect[0].h <= 0:
+                    if y > self.rect[0].x:
                         self.mode = MODES.CROP_BOTTOM
                     else:
                         self.mode = MODES.CROP_TOP
                 else:
                     xp = float(x - xa) / wa
-                    yp = float(y - self.rect_l.y) / self.rect_l.h
+                    yp = float(y - self.rect[0].y) / self.rect[0].h
                     if xp > yp: # Top / Right
                         if xp > 1 - yp:
                             self.mode = MODES.CROP_RIGHT
@@ -310,8 +378,7 @@ class CropTool(Frame):
             if self.mouse_last is None:
                 dx = dy = dix = diy = 0
             else:
-                dx = x - self.mouse_last[0]
-                dy = y - self.mouse_last[1]
+                dx, dy = OUTPUT_FORMAT.scale_mouse(self.output_format, x - self.mouse_last[0], y - self.mouse_last[1])
                 dix = dx / self.scale / self.image_width
                 diy = dy / self.scale / self.image_height
             self.mouse_last = x, y
@@ -405,36 +472,70 @@ class CropTool(Frame):
         ptr = c_void_p()
         vbuffer.Lock(0, 0, byref(ptr), 0)
 
+        # Path of least resistance to switch to untranslated coordinates:
+        def x(x):
+            return x / self.presentparams.BackBufferWidth * 2.0 - 1.0
+        def y(y):
+            return y / self.presentparams.BackBufferHeight * 2.0 - 1.0
+
         data = (Vertex * 4)(
-            #            X        Y  Z  RHW     U     V
-            Vertex(    r.x,     r.y, 1, 1.0, r.u1, r.v1),
-            Vertex(r.x+r.w,     r.y, 1, 1.0, r.u2, r.v1),
-            Vertex(    r.x, r.y+r.h, 1, 1.0, r.u1, r.v2),
-            Vertex(r.x+r.w, r.y+r.h, 1, 1.0, r.u2, r.v2),
+            #              X            Y     Z     U     V
+            Vertex(x(r.x    ), -y(r.y    ), 1.0, r.u1, r.v1),
+            Vertex(x(r.x+r.w), -y(r.y    ), 1.0, r.u2, r.v1),
+            Vertex(x(r.x    ), -y(r.y+r.h), 1.0, r.u1, r.v2),
+            Vertex(x(r.x+r.w), -y(r.y+r.h), 1.0, r.u2, r.v2),
         )
         ctypes.memmove(ptr, data, sizeof(Vertex) * 4)
         vbuffer.Unlock()
 
     def OnUpdate(self):
-        self.rect_l = self.calc_rect(-1)
-        self.rect_r = self.calc_rect( 1)
-        self.update_vertex_buffer_eye(self.vbuffer_l, self.rect_l)
-        self.update_vertex_buffer_eye(self.vbuffer_r, self.rect_r)
+        self.rect = self.calc_rect(-1), self.calc_rect(1)
+        self.update_vertex_buffer_eye(self.vbuffer[0], self.rect[0])
+        self.update_vertex_buffer_eye(self.vbuffer[1], self.rect[1])
+
+    def render_eye(self, eye_idx):
+        self.device.SetStreamSource(0, self.vbuffer[eye_idx], 0, sizeof(Vertex))
+        self.device.SetTexture(0, self.texture[eye_idx])
+        self.device.DrawPrimitive(D3DPT.TRIANGLESTRIP, 0, 2)
+
+    def render_3d_vision(self):
+        for eye_idx, nveye in ((0, STEREO_ACTIVE_EYE.LEFT), (1, STEREO_ACTIVE_EYE.RIGHT)):
+            NvAPI.Stereo_SetActiveEye(self.stereo_handle, nveye)
+            self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff000000 | self.background, 1.0, 0)
+            self.render_eye(eye_idx)
+
+    def render_sbs(self):
+        if nv3d:
+            NvAPI.Stereo_SetActiveEye(self.stereo_handle, STEREO_ACTIVE_EYE.MONO)
+
+        self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff000000 | self.background, 1.0, 0)
+
+        viewport = D3DVIEWPORT9()
+        viewport.MinZ = 0
+        viewport.MaxZ = 1
+
+        for eye in (0, 1):
+            OUTPUT_FORMAT.set_viewport(viewport, self.output_format, eye,
+                    self.presentparams.BackBufferWidth, self.presentparams.BackBufferHeight)
+            self.device.SetViewport(byref(viewport))
+            self.render_eye(eye)
+
+        # Set a fullscreen viewport before leaving, for the clear() in the next
+        # frame and in case we switch to 3D Vision where we no longer set the
+        # viewport
+        viewport.X = 0
+        viewport.Y = 0
+        viewport.Width = self.presentparams.BackBufferWidth
+        viewport.Height = self.presentparams.BackBufferHeight
+        self.device.SetViewport(byref(viewport))
 
     def OnRender(self):
+        self.device.SetRenderState(D3DRS.LIGHTING, False)
         self.device.SetFVF(VERTEXFVF)
-
-        NvAPI.Stereo_SetActiveEye(self.stereo_handle, STEREO_ACTIVE_EYE.LEFT)
-        self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff000000 | self.background, 1.0, 0)
-        self.device.SetStreamSource(0, self.vbuffer_l, 0, sizeof(Vertex))
-        self.device.SetTexture(0, self.texture_l)
-        self.device.DrawPrimitive(D3DPT.TRIANGLESTRIP, 0, 2)
-
-        NvAPI.Stereo_SetActiveEye(self.stereo_handle, STEREO_ACTIVE_EYE.RIGHT)
-        self.device.Clear(0, None, D3DCLEAR.TARGET | D3DCLEAR.ZBUFFER, 0xff000000 | self.background, 1.0, 0)
-        self.device.SetStreamSource(0, self.vbuffer_r, 0, sizeof(Vertex))
-        self.device.SetTexture(0, self.texture_r)
-        self.device.DrawPrimitive(D3DPT.TRIANGLESTRIP, 0, 2)
+        if self.output_format == OUTPUT_FORMAT.NV3D:
+            self.render_3d_vision()
+        else:
+            self.render_sbs()
 
 def enable_stereo_in_windowed_mode():
     # We are using DirectX 9 to allow for the possibility of stereo in

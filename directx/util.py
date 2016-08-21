@@ -319,6 +319,10 @@ class Frame(object):
                     best = mode
                     continue
 
+                if mode.Width < best.Width or mode.Height < best.Height:
+                    # Worse resolution
+                    continue
+
                 if mode.RefreshRate > best.RefreshRate:
                     #Better refreshrate.
                     best = mode

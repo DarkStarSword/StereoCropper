@@ -28,6 +28,8 @@ Controls
 - Control + left button + drag border: Adjust crop left/right/up/down
 - Control + right button + drag border: Adjust crop backwards/forwards
 - Escape: Save image (if modified) to a new file and exit
+- Page Up: Save image (if modified) to a new file and load previous file in directory
+- Page Down: Save image (if modified) to a new file and load next file in directory
 - S: Immediately save image to a new file
 - B: Cycle background colour (will be saved into image)
 - O: Cycle output formats (3D Vision, Side-by-Side, Top-and-Bottom)

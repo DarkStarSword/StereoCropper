@@ -20,7 +20,7 @@
 from __future__ import print_function
 
 import sys, os
-import ctypes, struct, math
+import ctypes, struct, math, itertools, re
 import numpy as np
 from collections import namedtuple
 import Tkinter, tkFileDialog
@@ -138,6 +138,10 @@ def saturate(n):
 # will work and will save time so I'll use it for now.
 class CropTool(Frame):
     def __init__(self, filename, *a, **kw):
+        self.init(filename)
+        return Frame.__init__(self, *a, **kw)
+
+    def init(self, filename):
         self.filename = filename
         self.scale = 1.0
         self.mouse_last = None
@@ -152,7 +156,6 @@ class CropTool(Frame):
         self.output_format = OUTPUT_FORMAT.NV3D
         self.check_output_format()
         self.swap_eyes = False
-        return Frame.__init__(self, *a, **kw)
 
     def image_to_texture(self, image):
         texture = POINTER(IDirect3DTexture9)()
@@ -203,12 +206,13 @@ class CropTool(Frame):
         return texture_l, texture_r
 
     def save_adjusted_jps(self):
-        base_filename = os.path.splitext(self.filename)[0] + '-cropped'
+        base_filename = os.path.join(os.path.dirname(self.filename), self.file_prefix(self.filename)) + '-cropped'
         filename = base_filename + '.jps'
         i = 0
         while os.path.exists(filename):
             i += 1
             filename = base_filename + '-%d.jps' % i
+        print('Saving %s...' % filename)
 
         h_offset = [self.hcrop[0][0] - self.parallax / 200.0,
                     self.hcrop[1][0] + self.parallax / 200.0]
@@ -287,6 +291,11 @@ class CropTool(Frame):
         del self.texture
         del self.vbuffer
 
+    def load_new_file(self, filename):
+        self.init(filename)
+        self.texture = self.load_stereo_image(self.filename)
+        self.fit_to_window()
+
     def fit_to_window_uncropped(self):
         res_a = float(self.presentparams.BackBufferWidth) / self.presentparams.BackBufferHeight
         a = float(self.image_width) / self.image_height
@@ -333,6 +342,81 @@ class CropTool(Frame):
         self.output_format = (self.output_format + 1) % OUTPUT_FORMAT.NUM
         self.check_output_format()
 
+    file_prefix_pattern = re.compile(r'-cropped(?:-(?P<idx>[0-9]+))?')
+    def file_prefix(self, filename):
+        name = os.path.basename(filename).lower()
+        name = os.path.splitext(name)[0]
+        match = self.file_prefix_pattern.search(name)
+        if match is not None:
+            return name[:match.start()]
+        return name
+
+    def find_prev_next_file(self):
+        def file_supported(filename):
+            return os.path.splitext(filename)[1].lower() in ('.mpo', '.jps')
+
+        dirname = os.path.dirname(os.path.join(os.curdir, self.filename))
+        files = os.listdir(dirname)
+        files = filter(file_supported, files)
+        files = sorted(files, key=self.file_prefix)
+        # Remember - don't convert the result of groupby to a list prematurely
+        # or internal iterators will be useless:
+        files = itertools.groupby(files, self.file_prefix)
+        cur_group = self.file_prefix(self.filename)
+        cur_idx = 0
+        file_groups = []
+        for i, (group, file_group) in enumerate(files):
+            file_groups.append(list(file_group))
+            if group == cur_group:
+                cur_idx = i
+        prev = file_groups[(cur_idx - 1) % len(file_groups)]
+        next = file_groups[(cur_idx + 1) % len(file_groups)]
+        prev = map(lambda x: os.path.join(dirname, x), prev)
+        next = map(lambda x: os.path.join(dirname, x), next)
+        return (prev, next)
+
+    def highest_priority_file(self, files):
+        def file_cmp(a, b):
+            '''
+            Comparison function to sort files so the highest priority will be
+            first. Files must already have been reduced to a set of related files
+            (same filename prefix) and that can be opened by this tool. Previously
+            cropped files take priority over uncropped files.
+            '''
+            # Check for previously cropped files:
+            match_a = self.file_prefix_pattern.search(a)
+            match_b = self.file_prefix_pattern.search(b)
+            if match_a is not None and match_b is None:
+                return -1
+            if match_a is None and match_b is not None:
+                return 1
+            if match_a is not None and match_b is not None:
+                # Both files were previously cropped, the one with the highest
+                # index takes priority:
+                idx_a  = match_a.group('idx')
+                idx_b  = match_b.group('idx')
+                if idx_a is None:
+                    return 1
+                if idx_b is None:
+                    return -1
+                # Higher index takes priority, so reverse sort:
+                return -cmp(int(idx_a), int(idx_b))
+            # No real policy from this point onwards, resort to alphabetical. We
+            # could maybe prioritise .mpo over .jps, but it's not clear that would
+            # always be the correct answer.
+            return cmp(a, b)
+        return sorted(files, cmp=file_cmp)[0]
+
+    def open_prev_file(self):
+        filename = self.highest_priority_file(self.find_prev_next_file()[0])
+        print('Previous file: %s...' % filename)
+        self.load_new_file(filename)
+
+    def open_next_file(self):
+        filename = self.highest_priority_file(self.find_prev_next_file()[1])
+        print('Next file: %s...' % filename)
+        self.load_new_file(filename)
+
     def OnKey(self, (msg, wParam, lParam)):
         if msg == 0x100 and not lParam & 0x40000000: # WM_KEYDOWN that is not a repeat
             # Borrow some geeqie style key bindings, and some custom ones
@@ -358,6 +442,14 @@ class CropTool(Frame):
                 self.swap_eyes = not self.swap_eyes
             elif wParam in MODES.hold_keys:
                 self.mode = MODES.hold_keys[wParam]
+            elif wParam == 0x21: # Page Up
+                if self.dirty:
+                    self.save_adjusted_jps()
+                self.open_prev_file()
+            elif wParam == 0x22: # Page Down
+                if self.dirty:
+                    self.save_adjusted_jps()
+                self.open_next_file()
         elif msg == 0x105 and not lParam & 0x40000000: # WM_SYSKEYDOWN that is not a repeat:
             if wParam == 0x79: # F10
                 self.ToggleFullscreen()

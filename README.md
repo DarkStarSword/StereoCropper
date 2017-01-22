@@ -30,12 +30,13 @@ Controls
 - Escape: Save image (if modified) to a new file and exit
 - Page Up: Save image (if modified) to a new file and load previous file in directory
 - Page Down: Save image (if modified) to a new file and load next file in directory
+- Shift + Mouse wheel: Save image (if modified) and load the previous / next file
 - S: Immediately save image to a new file
 - B: Cycle background colour (will be saved into image)
 - O: Cycle output formats (3D Vision, Side-by-Side, Top-and-Bottom)
 - I: Swap eyes (will not affect output image)
 - F: Toggle full screen
-- V + left/right button + drag up/down: Adjust vertical alignment
+- V + left/right button + drag up/down: Adjust vertical alignment (use the mouse cursor as a guide)
 
 Known Limitations
 -----------------

@@ -408,11 +408,15 @@ class CropTool(Frame):
         return sorted(files, cmp=file_cmp)[0]
 
     def open_prev_file(self):
+        if self.dirty:
+            self.save_adjusted_jps()
         filename = self.highest_priority_file(self.find_prev_next_file()[0])
         print('Previous file: %s...' % filename)
         self.load_new_file(filename)
 
     def open_next_file(self):
+        if self.dirty:
+            self.save_adjusted_jps()
         filename = self.highest_priority_file(self.find_prev_next_file()[1])
         print('Next file: %s...' % filename)
         self.load_new_file(filename)
@@ -443,12 +447,8 @@ class CropTool(Frame):
             elif wParam in MODES.hold_keys:
                 self.mode = MODES.hold_keys[wParam]
             elif wParam == 0x21: # Page Up
-                if self.dirty:
-                    self.save_adjusted_jps()
                 self.open_prev_file()
             elif wParam == 0x22: # Page Down
-                if self.dirty:
-                    self.save_adjusted_jps()
                 self.open_next_file()
         elif msg == 0x105 and not lParam & 0x40000000: # WM_SYSKEYDOWN that is not a repeat:
             if wParam == 0x79: # F10
@@ -492,12 +492,25 @@ class CropTool(Frame):
             if self.mode in (MODES.CROP_LEFT, MODES.CROP_RIGHT, MODES.CROP_TOP, MODES.CROP_BOTTOM):
                 self.mode = MODES.CROP
         elif msg == 0x20a: # Mouse wheel
-            x, y = OUTPUT_FORMAT.translate_mouse(self.output_format, x, y,
-                    self.presentparams.BackBufferWidth, self.presentparams.BackBufferHeight)
-            new_scale = max(self.scale * (1.0 + wheel / 900.0), 0.025)
-            self.pan = ((self.pan[0] - x + self.presentparams.BackBufferWidth / 2.0) * new_scale / self.scale + x - self.presentparams.BackBufferWidth / 2.0,
-                        (self.pan[1] - y + self.presentparams.BackBufferHeight / 2.0) * new_scale / self.scale + y - self.presentparams.BackBufferHeight / 2.0)
-            self.scale = new_scale
+            if modifiers & 0x0004: # Shift
+                # If this was primarily a viewer I'd go for the wheel by itself
+                # to select previous/next image and ctrl+wheel to zoom for
+                # consistency with other good image viewers, but as it is
+                # primarily aimed at editing we don't want to make it too easy
+                # to change images accidentally given that ctrl+wheel needs to
+                # be held for some of the manipulations. Don't want to violate
+                # the meaning of ctrl+wheel up/down, so use shift+wheel instead.
+                if wheel < 0:
+                    self.open_next_file()
+                else:
+                    self.open_prev_file()
+            else:
+                x, y = OUTPUT_FORMAT.translate_mouse(self.output_format, x, y,
+                        self.presentparams.BackBufferWidth, self.presentparams.BackBufferHeight)
+                new_scale = max(self.scale * (1.0 + wheel / 900.0), 0.025)
+                self.pan = ((self.pan[0] - x + self.presentparams.BackBufferWidth / 2.0) * new_scale / self.scale + x - self.presentparams.BackBufferWidth / 2.0,
+                            (self.pan[1] - y + self.presentparams.BackBufferHeight / 2.0) * new_scale / self.scale + y - self.presentparams.BackBufferHeight / 2.0)
+                self.scale = new_scale
         elif msg == 0x200: # Mouse move
             if self.mouse_last is None:
                 dx = dy = dix = diy = 0

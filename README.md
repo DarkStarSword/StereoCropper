@@ -14,6 +14,13 @@ It supports NVIDIA 3D Vision Direct, Side-by-Side and Top-and-Bottom output
 formats. It can open .mpo files produced by most 3D cameras, as well as side by
 side .jps files. Images are saved in the .jps format upon closing.
 
+Starting from version 1.1, the program saves a .spct file next to the modified
+.jps file, which opens the original file with the same adjustments pre-applied.
+This prevents loss of quality from successive cropping sessions, allows photos
+to be uncropped without having to start from scratch, and facilitates
+re-applying a crop to an image where the source has since been modified (e.g.
+by rawtherapee).
+
 If you find this program useful, consider supporting me on [Patreon][1]
 
 [1]: https://www.patreon.com/DarkStarSword

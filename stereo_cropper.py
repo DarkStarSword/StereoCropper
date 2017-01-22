@@ -20,7 +20,7 @@
 from __future__ import print_function
 
 import sys, os
-import ctypes, struct, math, itertools, re
+import ctypes, struct, math, itertools, re, json
 import numpy as np
 from collections import namedtuple
 import Tkinter, tkFileDialog
@@ -205,14 +205,46 @@ class CropTool(Frame):
 
         return texture_l, texture_r
 
+    def load_spct(self, filename):
+        spct_json = json.load(open(filename, 'r'))
+        if spct_json['file_version'] != '1.0':
+            print('Unsupported file version %s' % spct_json.file_version)
+            self.Quit()
+        self.filename = os.path.join(os.path.dirname(filename), spct_json['filename'])
+        self.parallax = spct_json['parallax']
+        self.vertical_alignment = spct_json['vertical_alignment']
+        self.vcrop = spct_json['vertical_crop']
+        self.hcrop = spct_json['horizontal_crop']
+        self.background = spct_json['background']
+
+    def load_image(self):
+        if os.path.splitext(self.filename)[1].lower() == '.spct':
+            self.load_spct(self.filename)
+
+        # Load both images from the MPO file into a pair of textures:
+        self.texture = self.load_stereo_image(self.filename)
+
     def save_adjusted_jps(self):
         base_filename = os.path.join(os.path.dirname(self.filename), self.file_prefix(self.filename)) + '-cropped'
-        filename = base_filename + '.jps'
+        jpg_filename = base_filename + '.jps'
+        spct_filename = base_filename + '.spct'
         i = 0
-        while os.path.exists(filename):
+        while os.path.exists(jpg_filename):
             i += 1
-            filename = base_filename + '-%d.jps' % i
-        print('Saving %s...' % filename)
+            jpg_filename = base_filename + '-%d.jps' % i
+            spct_filename = base_filename + '-%d.spct' % i
+        print('Saving %s + %s...' % (jpg_filename, spct_filename))
+
+        spct_json = {
+            'file_version': '1.0',
+            'filename': os.path.basename(self.filename),
+            'parallax': self.parallax,
+            'vertical_alignment': self.vertical_alignment,
+            'vertical_crop': self.vcrop,
+            'horizontal_crop': self.hcrop,
+            'background': self.background,
+        }
+        json.dump(spct_json, open(spct_filename, 'w'))
 
         h_offset = [self.hcrop[0][0] - self.parallax / 200.0,
                     self.hcrop[1][0] + self.parallax / 200.0]
@@ -260,7 +292,7 @@ class CropTool(Frame):
             new_img.paste(cropped, (side_off + int(round(h_offset[eye_idx] * image.width)), 0))
             cropped.close()
 
-        new_img.save(filename, format='JPEG')
+        new_img.save(jpg_filename, format='JPEG')
         new_img.close()
         self.dirty = False
 
@@ -275,8 +307,7 @@ class CropTool(Frame):
                 nv3d = False
                 self.check_output_format()
 
-        # Load both images from the MPO file into a pair of textures:
-        self.texture = self.load_stereo_image(self.filename)
+        self.load_image()
 
         # Create two vertex buffers for the images in each eye. Later we might
         # switch to the programmable pipeline and work out the offsets in the
@@ -293,7 +324,7 @@ class CropTool(Frame):
 
     def load_new_file(self, filename):
         self.init(filename)
-        self.texture = self.load_stereo_image(self.filename)
+        self.load_image()
         self.fit_to_window()
 
     def fit_to_window_uncropped(self):
@@ -353,7 +384,7 @@ class CropTool(Frame):
 
     def find_prev_next_file(self):
         def file_supported(filename):
-            return os.path.splitext(filename)[1].lower() in ('.mpo', '.jps')
+            return os.path.splitext(filename)[1].lower() in ('.mpo', '.jps', '.spct')
 
         dirname = os.path.dirname(os.path.join(os.curdir, self.filename))
         files = os.listdir(dirname)
@@ -381,7 +412,8 @@ class CropTool(Frame):
             Comparison function to sort files so the highest priority will be
             first. Files must already have been reduced to a set of related files
             (same filename prefix) and that can be opened by this tool. Previously
-            cropped files take priority over uncropped files.
+            cropped files take priority over uncropped files, and .spct files
+            will take priority over .jps or .mpo files.
             '''
             # Check for previously cropped files:
             match_a = self.file_prefix_pattern.search(a)
@@ -395,12 +427,26 @@ class CropTool(Frame):
                 # index takes priority:
                 idx_a  = match_a.group('idx')
                 idx_b  = match_b.group('idx')
-                if idx_a is None:
+                if idx_a is None and idx_b is not None:
                     return 1
-                if idx_b is None:
+                if idx_a is not None and idx_b is None:
                     return -1
-                # Higher index takes priority, so reverse sort:
-                return -cmp(int(idx_a), int(idx_b))
+                if idx_a is not None and idx_b is not None:
+                    # Higher index takes priority, so reverse sort:
+                    result = -cmp(int(idx_a), int(idx_b))
+                    if result:
+                        return result
+                    # Index on both files is the same, continue with other
+                    # comparisons
+
+            # Prioritise .spct files over anything else:
+            ext_a = os.path.splitext(a)[1].lower()
+            ext_b = os.path.splitext(b)[1].lower()
+            if ext_a == '.spct' and ext_b != '.spct':
+                return -1
+            if ext_a != '.spct' and ext_b == '.spct':
+                return 1
+
             # No real policy from this point onwards, resort to alphabetical. We
             # could maybe prioritise .mpo over .jps, but it's not clear that would
             # always be the correct answer.
@@ -731,7 +777,8 @@ def main():
         root = Tkinter.Tk()
         root.withdraw()
         filename = tkFileDialog.askopenfilename(filetypes = [
-            ('Stereo Images', ('.mpo', '.jps')),
+            ('Stereo Images', ('.mpo', '.jps', '.spct')),
+            ('Stereo Photo Cropping Tool files', '.spct'),
             ('MPO files', '.mpo'),
             ('JPS files', '.jps'),
             ('All files', '*')

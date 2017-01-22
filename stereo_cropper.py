@@ -138,10 +138,14 @@ def saturate(n):
 # will work and will save time so I'll use it for now.
 class CropTool(Frame):
     def __init__(self, filename, *a, **kw):
-        self.init(filename)
+        self.reinit(filename)
+        self.background = backgrounds[0]
+        self.output_format = OUTPUT_FORMAT.NV3D
+        self.check_output_format()
+        self.swap_eyes = False
         return Frame.__init__(self, *a, **kw)
 
-    def init(self, filename):
+    def reinit(self, filename):
         self.filename = filename
         self.scale = 1.0
         self.mouse_last = None
@@ -151,11 +155,7 @@ class CropTool(Frame):
         self.vertical_alignment = 0.0
         self.vcrop = [0.0, 1.0]
         self.hcrop = [[0.0, 1.0], [0.0, 1.0]]
-        self.background = backgrounds[0]
         self.dirty = False
-        self.output_format = OUTPUT_FORMAT.NV3D
-        self.check_output_format()
-        self.swap_eyes = False
 
     def image_to_texture(self, image):
         texture = POINTER(IDirect3DTexture9)()
@@ -323,7 +323,7 @@ class CropTool(Frame):
         del self.vbuffer
 
     def load_new_file(self, filename):
-        self.init(filename)
+        self.reinit(filename)
         self.load_image()
         self.fit_to_window()
 

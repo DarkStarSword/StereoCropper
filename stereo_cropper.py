@@ -184,7 +184,7 @@ class CropTool(Frame):
             self.image.seek(eye == 1)
             self.image_width = self.image.width
             return self.image
-        elif self.image.format == 'JPEG':
+        elif self.image.format in ('JPEG', 'PNG'):
             self.image_width = self.image.width / 2
             x = 0
             if eye != 1:
@@ -384,7 +384,7 @@ class CropTool(Frame):
 
     def find_prev_next_file(self):
         def file_supported(filename):
-            return os.path.splitext(filename)[1].lower() in ('.mpo', '.jps', '.spct')
+            return os.path.splitext(filename)[1].lower() in ('.mpo', '.jps', '.spct', '.pns')
 
         dirname = os.path.dirname(os.path.join(os.curdir, self.filename))
         files = os.listdir(dirname)
@@ -413,7 +413,7 @@ class CropTool(Frame):
             first. Files must already have been reduced to a set of related files
             (same filename prefix) and that can be opened by this tool. Previously
             cropped files take priority over uncropped files, and .spct files
-            will take priority over .jps or .mpo files.
+            will take priority over .jps, .pns or .mpo files.
             '''
             # Check for previously cropped files:
             match_a = self.file_prefix_pattern.search(a)
@@ -777,10 +777,11 @@ def main():
         root = Tkinter.Tk()
         root.withdraw()
         filename = tkFileDialog.askopenfilename(filetypes = [
-            ('Stereo Images', ('.mpo', '.jps', '.spct')),
+            ('Stereo Images', ('.mpo', '.jps', '.pns', '.spct')),
             ('Stereo Photo Cropping Tool files', '.spct'),
             ('MPO files', '.mpo'),
             ('JPS files', '.jps'),
+            ('PNS files', '.pns'),
             ('All files', '*')
             ])
         if not filename:

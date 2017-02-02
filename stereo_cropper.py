@@ -224,14 +224,17 @@ class CropTool(Frame):
         # Load both images from the MPO file into a pair of textures:
         self.texture = self.load_stereo_image(self.filename)
 
-    def save_adjusted_jps(self):
+    def save_adjusted_image(self):
         base_filename = os.path.join(os.path.dirname(self.filename), self.file_prefix(self.filename)) + '-cropped'
-        jpg_filename = base_filename + '.jps'
+        extension = os.path.splitext(self.filename)[1]
+        if extension.lower() not in ('.jps', '.pns'):
+            extension = '.jps'
+        jpg_filename = base_filename + extension
         spct_filename = base_filename + '.spct'
         i = 0
         while os.path.exists(jpg_filename):
             i += 1
-            jpg_filename = base_filename + '-%d.jps' % i
+            jpg_filename = base_filename + '-%d%s' % (i, extension)
             spct_filename = base_filename + '-%d.spct' % i
         print('Saving %s + %s...' % (jpg_filename, spct_filename))
 
@@ -455,14 +458,14 @@ class CropTool(Frame):
 
     def open_prev_file(self):
         if self.dirty:
-            self.save_adjusted_jps()
+            self.save_adjusted_image()
         filename = self.highest_priority_file(self.find_prev_next_file()[0])
         print('Previous file: %s...' % filename)
         self.load_new_file(filename)
 
     def open_next_file(self):
         if self.dirty:
-            self.save_adjusted_jps()
+            self.save_adjusted_image()
         filename = self.highest_priority_file(self.find_prev_next_file()[1])
         print('Next file: %s...' % filename)
         self.load_new_file(filename)
@@ -472,7 +475,7 @@ class CropTool(Frame):
             # Borrow some geeqie style key bindings, and some custom ones
             if wParam == 0x1B: # Escape
                 if self.dirty:
-                    self.save_adjusted_jps()
+                    self.save_adjusted_image()
                 self.Quit()
             elif wParam == ord('Z'):
                 self.scale = 1.0
@@ -483,7 +486,7 @@ class CropTool(Frame):
                 self.ToggleFullscreen()
                 self.fit_to_window()
             elif wParam == ord('S'):
-                self.save_adjusted_jps()
+                self.save_adjusted_image()
             elif wParam == ord('B'):
                 self.cycle_background_colours()
             elif wParam == ord('O'):

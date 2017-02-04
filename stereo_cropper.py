@@ -178,7 +178,15 @@ class CropTool(Frame):
 
         return texture
 
+    def is_stereo_image_extension(self):
+        return os.path.splitext(self.filename)[1].lower() in ('.jps', '.pns')
+
     def get_image_eye(self, eye):
+        if not self.is_stereo_image_extension():
+            self.image_height = self.image.height
+            self.image_width = self.image.width
+            return self.image
+
         self.image_height = self.image.height
         if self.image.format == 'MPO':
             self.image.seek(eye == 1)
@@ -227,7 +235,9 @@ class CropTool(Frame):
     def save_adjusted_image(self):
         base_filename = os.path.join(os.path.dirname(self.filename), self.file_prefix(self.filename)) + '-cropped'
         extension = os.path.splitext(self.filename)[1]
-        if extension.lower() not in ('.jps', '.pns'):
+        if extension.lower() == '.png':
+            extension = '.pns'
+        elif extension.lower() not in ('.jps', '.pns'):
             extension = '.jps'
         jpg_filename = base_filename + extension
         spct_filename = base_filename + '.spct'
@@ -781,10 +791,13 @@ def main():
         root.withdraw()
         filename = tkFileDialog.askopenfilename(filetypes = [
             ('Stereo Images', ('.mpo', '.jps', '.pns', '.spct')),
+            ('Mono Images', ('.jpg', '.jpeg', '.png')),
             ('Stereo Photo Cropping Tool files', '.spct'),
-            ('MPO files', '.mpo'),
-            ('JPS files', '.jps'),
-            ('PNS files', '.pns'),
+            ('MPO stereo images', '.mpo'),
+            ('JPS stereo images', '.jps'),
+            ('PNS stereo images', '.pns'),
+            ('JPEG mono images', ('.jpg', '.jpeg')),
+            ('PNG mono images', '.png'),
             ('All files', '*')
             ])
         if not filename:

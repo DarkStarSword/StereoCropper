@@ -232,6 +232,29 @@ class CropTool(Frame):
         # Load both images from the MPO file into a pair of textures:
         self.texture = self.load_stereo_image(self.filename)
 
+    def calc_horizontal_offsets(self):
+        h_offset = [self.hcrop[0][0] - self.parallax / 200.0,
+                    self.hcrop[1][0] + self.parallax / 200.0]
+
+        # Align one of the two images to the left of the final image:
+        if h_offset[0] < h_offset[1]:
+            h_offset[1] -= h_offset[0]
+            h_offset[0] = 0.0
+        else:
+            h_offset[0] -= h_offset[1]
+            h_offset[1] = 0.0
+
+        return h_offset
+
+    def calc_final_image_width(self, horizontal_offsets):
+        # Calculate the width taking cropping and parallax into account. The
+        # width will be the maximum required for the two images, but no more -
+        # one of the images should be aligned to the right.
+        # FIXME: There is still a minor off by one error that might result in a
+        # single black column on the right of an image that shouldn't be there,
+        # depending on floating point rounding.
+        return int(math.ceil(max(self.hcrop[0][1] - self.hcrop[0][0] + horizontal_offsets[0], self.hcrop[1][1] - self.hcrop[1][0] + horizontal_offsets[1]) * self.image_width))
+
     def save_adjusted_image(self):
         base_filename = os.path.join(os.path.dirname(self.filename), self.file_prefix(self.filename)) + '-cropped'
         extension = os.path.splitext(self.filename)[1]
@@ -259,24 +282,8 @@ class CropTool(Frame):
         }
         json.dump(spct_json, open(spct_filename, 'w'))
 
-        h_offset = [self.hcrop[0][0] - self.parallax / 200.0,
-                    self.hcrop[1][0] + self.parallax / 200.0]
-
-        # Align one of the two images to the left of the final image:
-        if h_offset[0] < h_offset[1]:
-            h_offset[1] -= h_offset[0]
-            h_offset[0] = 0.0
-        else:
-            h_offset[0] -= h_offset[1]
-            h_offset[1] = 0.0
-
-        # Calculate the width taking cropping and parallax into account. The
-        # width will be the maximum required for the two images, but no more -
-        # one of the images should be aligned to the right.
-        # FIXME: There is still a minor off by one error that might result in a
-        # single black column on the right of an image that shouldn't be there,
-        # depending on floating point rounding.
-        width = int(math.ceil(max(self.hcrop[0][1] - self.hcrop[0][0] + h_offset[0], self.hcrop[1][1] - self.hcrop[1][0] + h_offset[1]) * self.image_width))
+        h_offset = self.calc_horizontal_offsets()
+        width = self.calc_final_image_width(h_offset)
         height = (self.vcrop[1] - self.vcrop[0] - abs(self.vertical_alignment)) * self.image_height
 
         byteswapped_background = struct.unpack('<I', struct.pack('>I', self.background))[0] >> 8
@@ -357,7 +364,12 @@ class CropTool(Frame):
         # and right, adjust parallax and fit to window.
         minc = min(self.hcrop[0][0], self.hcrop[1][0])
         maxc = max(self.hcrop[0][1], self.hcrop[1][1])
-        w = (maxc - minc + abs(self.parallax / 100.0)) * self.image_width
+
+        # Changed to use the same width calculations as when saving an image to
+        # fix scaling the image too small when cropped on both sides:
+        h_offset = self.calc_horizontal_offsets()
+        w = self.calc_final_image_width(h_offset)
+
         h = (self.vcrop[1] - self.vcrop[0] - abs(self.vertical_alignment)) * self.image_height
         a = w / h
         if a > res_a:

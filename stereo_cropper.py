@@ -232,19 +232,17 @@ class CropTool(Frame):
         # Load both images from the MPO file into a pair of textures:
         self.texture = self.load_stereo_image(self.filename)
 
-    def calc_horizontal_offsets(self):
-        h_offset = [self.hcrop[0][0] - self.parallax / 200.0,
-                    self.hcrop[1][0] + self.parallax / 200.0]
+    def calc_horizontal_offsets(self, right=0):
+        return (self.hcrop[0][right] - self.parallax / 200.0,
+                    self.hcrop[1][right] + self.parallax / 200.0)
 
-        # Align one of the two images to the left of the final image:
+    def trim_horizontal_offsets_left(self, h_offset):
+        # Align one of the two images to the left of the final image.
+        # Do not modify the passed h_offset as it is still used to calculate
+        # the panning when fitting to window - return a new one.
         if h_offset[0] < h_offset[1]:
-            h_offset[1] -= h_offset[0]
-            h_offset[0] = 0.0
-        else:
-            h_offset[0] -= h_offset[1]
-            h_offset[1] = 0.0
-
-        return h_offset
+            return (0.0, h_offset[1] - h_offset[0])
+        return (h_offset[0] - h_offset[1], 0.0)
 
     def calc_final_image_width(self, horizontal_offsets):
         # Calculate the width taking cropping and parallax into account. The
@@ -283,6 +281,7 @@ class CropTool(Frame):
         json.dump(spct_json, open(spct_filename, 'w'))
 
         h_offset = self.calc_horizontal_offsets()
+        h_offset = self.trim_horizontal_offsets_left(h_offset)
         width = self.calc_final_image_width(h_offset)
         height = (self.vcrop[1] - self.vcrop[0] - abs(self.vertical_alignment)) * self.image_height
 
@@ -362,12 +361,12 @@ class CropTool(Frame):
         # account, so we can't just use the previous frame's rectangle. e.g.
         # make the left image max width but shrink the right image on both left
         # and right, adjust parallax and fit to window.
-        minc = min(self.hcrop[0][0], self.hcrop[1][0])
-        maxc = max(self.hcrop[0][1], self.hcrop[1][1])
 
         # Changed to use the same width calculations as when saving an image to
         # fix scaling the image too small when cropped on both sides:
-        h_offset = self.calc_horizontal_offsets()
+        h_offset_l = self.calc_horizontal_offsets()
+        h_offset_r = self.calc_horizontal_offsets(right=1)
+        h_offset = self.trim_horizontal_offsets_left(h_offset_l)
         w = self.calc_final_image_width(h_offset)
 
         h = (self.vcrop[1] - self.vcrop[0] - abs(self.vertical_alignment)) * self.image_height
@@ -377,10 +376,9 @@ class CropTool(Frame):
         else:
             self.scale = float(self.presentparams.BackBufferHeight) / h
 
-        # But we do use the crop values to calculate the new pan. Since this
-        # will be centered the parallax and vertical adjustments can be
-        # ignored:
-        self.pan = ((1.0 - maxc - minc) * self.image_width * self.scale / 2.0,
+        # Use the crop and parallax values to calculate the new pan. We can
+        # ignore the vertical adjustment since that will always be centered:
+        self.pan = ((1.0 - max(h_offset_r) - min(h_offset_l)) * self.image_width * self.scale / 2.0,
                 (1.0 - self.vcrop[1] - self.vcrop[0]) * self.image_height * self.scale / 2.0)
 
     def OnInit(self):

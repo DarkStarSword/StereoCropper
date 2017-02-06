@@ -346,15 +346,6 @@ class CropTool(Frame):
         self.load_image()
         self.fit_to_window()
 
-    def fit_to_window_uncropped(self):
-        res_a = float(self.presentparams.BackBufferWidth) / self.presentparams.BackBufferHeight
-        a = float(self.image_width) / self.image_height
-        if a > res_a:
-            self.scale = float(self.presentparams.BackBufferWidth) / self.image_width
-        else:
-            self.scale = float(self.presentparams.BackBufferHeight) / self.image_height
-        self.pan = (0.0, 0.0)
-
     def fit_to_window(self):
         res_a = float(self.presentparams.BackBufferWidth) / self.presentparams.BackBufferHeight
         # There are some edge cases where we need to take the parallax into
@@ -383,7 +374,7 @@ class CropTool(Frame):
 
     def OnInit(self):
         self.ToggleFullscreen()
-        self.fit_to_window_uncropped()
+        self.fit_to_window()
 
     def cycle_background_colours(self):
         self.background = backgrounds[(backgrounds.index(self.background) + 1) % len(backgrounds)]

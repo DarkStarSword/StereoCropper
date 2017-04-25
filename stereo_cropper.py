@@ -49,6 +49,10 @@ backgrounds = (
     #0x7c8084, # Cool gray
 )
 
+# This set will be expanded to include the extension of any manually opened
+# files, so that next/prev will include any similar files:
+navigate_extensions = set(('.mpo', '.jps', '.spct', '.pns'))
+
 # Custom vertex and it's FVF code. This is outdated tech for fixed pipeline, we
 # might change it later.
 class Vertex(Structure):
@@ -226,7 +230,15 @@ class CropTool(Frame):
         self.background = spct_json['background']
 
     def load_image(self):
-        if os.path.splitext(self.filename)[1].lower() == '.spct':
+        extension = os.path.splitext(self.filename)[1].lower()
+
+        # Add the extension to the list of extensions to search for when
+        # navigating files. This means by default the program will only
+        # navigate known stereo images, but if a mono / SBS / etc .jpeg is
+        # loaded then it will also navigate to other files of the same type.
+        navigate_extensions.add(extension)
+
+        if extension == '.spct':
             self.load_spct(self.filename)
 
         # Load both images from the MPO file into a pair of textures:
@@ -398,7 +410,7 @@ class CropTool(Frame):
 
     def find_prev_next_file(self):
         def file_supported(filename):
-            return os.path.splitext(filename)[1].lower() in ('.mpo', '.jps', '.spct', '.pns')
+            return os.path.splitext(filename)[1].lower() in navigate_extensions
 
         dirname = os.path.dirname(os.path.join(os.curdir, self.filename))
         files = os.listdir(dirname)
@@ -459,6 +471,13 @@ class CropTool(Frame):
             if ext_a == '.spct' and ext_b != '.spct':
                 return -1
             if ext_a != '.spct' and ext_b == '.spct':
+                return 1
+
+            # Prioritise stereo images over anything else:
+            stereo_extensions = ('.mpo', '.jps', '.pns')
+            if ext_a in stereo_extensions and ext_b not in stereo_extensions:
+                return -1
+            if ext_a not in stereo_extensions and ext_b in stereo_extensions:
                 return 1
 
             # No real policy from this point onwards, resort to alphabetical. We

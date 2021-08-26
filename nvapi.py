@@ -566,6 +566,7 @@ class _NvAPI(object):
 	except:
 		try:
 			nvapi_QueryInterface = cdll.nvapi64.nvapi_QueryInterface
+			nvapi_QueryInterface.restype = c_void_p
 		except:
 			nvapi_QueryInterface = None
 

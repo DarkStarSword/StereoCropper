@@ -829,7 +829,10 @@ def main():
         nv3d = False
     else:
         enable_stereo_in_windowed_mode()
-        NvAPI.Stereo_SetDriverMode(STEREO_DRIVER_MODE.DIRECT)
+        try:
+            NvAPI.Stereo_SetDriverMode(STEREO_DRIVER_MODE.DIRECT)
+        except NvAPI_Exception:
+            nv3d = False
 
     f = CropTool(filename, "Stereo Photo Cropping Tool")
     f.Mainloop()
